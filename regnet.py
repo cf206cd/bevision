@@ -23,7 +23,7 @@ class Bottleneck(nn.Module):
 
     def __init__(self, inplanes, planes, stride=1, downsample=None, group_width=1,
                  dilation=1, norm_layer=None):
-        super(Bottleneck, self).__init__()
+        super().__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         width = planes * self.expansion
@@ -66,7 +66,7 @@ class RegNet(nn.Module):
     def __init__(self, block, layers, widths, num_classes=1000, zero_init_residual=True,
                  group_width=1, replace_stride_with_dilation=None,
                  norm_layer=None):
-        super(RegNet, self).__init__()
+        super().__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
