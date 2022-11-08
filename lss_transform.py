@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
 
-class LSS(nn.Module):
-    def __init__(self, grid_conf=None, input_dim=None, init_cfg=None, numC_input=512,
-                 numC_Trans=512, downsample=16, use_quickcumsum=True, **kwargs):
+class LSSTransform(nn.Module):
+    def __init__(self, grid_conf=None, input_dim=None, numC_input=512,
+                 numC_Trans=512, downsample=16, use_quickcumsum=True):
 
-        super().__init__(init_cfg)
+        super().__init__()
         if grid_conf is None:
             grid_conf = {
                 'xbound': [-51.2, 51.2, 0.8],
@@ -68,15 +68,19 @@ class LSS(nn.Module):
 
         # undo post-transformation
         # B x N x D x H x W x 3
+        # 抵消数据增强及预处理对像素的变化
         points = self.frustum - post_trans.view(BS, N, 1, 1, 1, 3)
         points = torch.inverse(post_rots).view(
             BS, N, 1, 1, 1, 3, 3).matmul(points.unsqueeze(-1)) 
 
         # cam_to_ego
+        
         points = torch.cat((points[:, :, :, :, :, :2] * points[:, :, :, :, :, 2:3],
                             points[:, :, :, :, :, 2:3]
-                            ), 5)
+                            ), 5) # 将像素坐标(u,v,1)根据深度d变成齐次坐标(du,dv,d)
 
+        # 将像素坐标d[u,v,1]^T转换到车体坐标系下的[x,y,z]^T
+        # d[u,v,1]^T=intrins*rots^(-1)*([x,y,z]^T-trans)，这里需要倒过来
         combine = rots.matmul(torch.inverse(intrins))
         points = combine.view(BS, N, 1, 1, 1, 3, 3).matmul(points).squeeze(-1)
         points += trans.view(BS, N, 1, 1, 1, 3)
@@ -88,6 +92,7 @@ class LSS(nn.Module):
         Nprime = B * N * D * H * W
         nx = self.nx.to(torch.long)
         # flatten x
+        # 将图像展平，一共有 B*N*D*H*W 个点
         x = x.reshape(Nprime, C)
 
         # flatten indices
@@ -95,7 +100,9 @@ class LSS(nn.Module):
         dx = self.dx.type_as(geom_feats)
         nx = self.nx.type_as(geom_feats).long()
 
-        geom_feats = ((geom_feats - (bx - dx / 2.)) / dx).long()
+        # 将[-m,m]的范围转换到[0,m*2]，计算栅格坐标并取整
+        geom_feats = ((geom_feats - (bx - dx / 2.)) / dx).long()  
+        # 将像素映射关系同样展平，一共有B*N*D*H*W*3
         geom_feats = geom_feats.view(Nprime, 3)
         batch_ix = torch.cat([torch.full([Nprime // B, 1], ix,
                                          device=x.device, dtype=torch.long) for ix in range(B)])
@@ -103,13 +110,16 @@ class LSS(nn.Module):
         geom_feats = geom_feats.type_as(x).long()
 
         # filter out points that are outside box
+        # 过滤掉在边界线之外的点
         kept = (geom_feats[:, 0] >= 0) & (geom_feats[:, 0] < nx[0]) \
             & (geom_feats[:, 1] >= 0) & (geom_feats[:, 1] < nx[1]) \
             & (geom_feats[:, 2] >= 0) & (geom_feats[:, 2] < nx[2])
         x = x[kept]
+        # [nx, ny, nz, n_batch]
         geom_feats = geom_feats[kept]
 
         # get tensors from the same voxel next to each other
+        # 给每一个点一个rank值，rank相等的点在同一个batch，并且在在同一个格子里面
         ranks = geom_feats[:, 0] * (nx[1] * nx[2] * B) \
             + geom_feats[:, 1] * (nx[2] * B) \
             + geom_feats[:, 2] * B \
@@ -117,6 +127,7 @@ class LSS(nn.Module):
         sorts = ranks.argsort()
         x, geom_feats, ranks = x[sorts], geom_feats[sorts], ranks[sorts]
 
+        # 一个batch的一个格子里只留一个点
         if self.use_quickcumsum:
             x, geom_feats = QuickCumsum.apply(x, geom_feats, ranks)
         else:
@@ -124,11 +135,13 @@ class LSS(nn.Module):
             x, geom_feats = cumsum_trick(x, geom_feats, ranks)
 
         # griddify (B x C x Z x X x Y)
+        # 将x按照栅格坐标放到final中
         final = torch.zeros((B, C, nx[2], nx[1], nx[0]), device=x.device)
         final[geom_feats[:, 3], :, geom_feats[:, 2],
               geom_feats[:, 1], geom_feats[:, 0]] = x
 
         # collapse Z
+        # 消除掉z维
         final = torch.cat(final.unbind(dim=2), 1)
 
         return final
@@ -139,15 +152,19 @@ class LSS(nn.Module):
         x = x.view(B * S * N, C, H, W)
         x = self.depthnet(x)
 
+        # 前D个通道估计深度
         depth = self.get_depth_dist(x[:, :self.D])
-        # [B * S, N, D, H, W, 3]
-        geom = self.get_geometry(rots, trans, intrins, post_rots, post_trans)
+
+        # 后numC_Trans个通道提取特征
         cvt_feature = x[:, self.D:(self.D + self.numC_Trans)]
 
+        # 深度乘特征，见LSS论文
         volume = depth.unsqueeze(1) * cvt_feature.unsqueeze(2)
         volume = volume.view(B * S, N, self.numC_Trans, self.D, H, W)
         volume = volume.permute(0, 1, 3, 4, 5, 2)
 
+        # 每个像素对应的视锥体的车体坐标[B * S, N, D, H, W, 3]
+        geom = self.get_geometry(rots, trans, intrins, post_rots, post_trans)
         if flip_x:
             geom[..., 0] = -geom[..., 0]
         if flip_y:
@@ -193,7 +210,7 @@ class QuickCumsum(torch.autograd.Function):
         # no gradient for geom_feats
         ctx.mark_non_differentiable(geom_feats)
 
-        return x, geom_feats
+        return x, geom_feats 
 
     @staticmethod
     def backward(ctx, gradx, gradgeom):
@@ -205,11 +222,3 @@ class QuickCumsum(torch.autograd.Function):
 
         return val, None, None
 
-
-grid_conf = {'xbound': [-51.2, 51.2, 0.8],
-            'ybound': [-51.2, 51.2, 0.8],
-            'zbound': [-10.0, 10.0, 20.0]}
-dx, bx, nx = gen_dx_bx(grid_conf['xbound'],
-                        grid_conf['ybound'],
-                        grid_conf['zbound'])
-print(dx,bx,nx)

@@ -63,7 +63,7 @@ class Bottleneck(nn.Module):
 
 class RegNet(nn.Module):
 
-    def __init__(self, block, layers, widths, num_classes=1000, zero_init_residual=True,
+    def __init__(self, block, layers, widths, out_indices = [2,3], zero_init_residual=True,
                  group_width=1, replace_stride_with_dilation=None,
                  norm_layer=None):
         super().__init__()
@@ -93,8 +93,8 @@ class RegNet(nn.Module):
                                        dilate=replace_stride_with_dilation[2])
         self.layer4 = self._make_layer(block, widths[3], layers[3], stride=2,
                                        dilate=replace_stride_with_dilation[3])
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(widths[-1] * block.expansion, num_classes)
+
+        self.out_indices = out_indices
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -137,11 +137,11 @@ class RegNet(nn.Module):
 
     def feats(self, x):
         x = self.stem(x)
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        return x
+        x0 = self.layer1(x)
+        x1 = self.layer2(x0)
+        x2 = self.layer3(x1)
+        x3 = self.layer4(x2)
+        return (x0,x1,x2,x3)
 
     def stem(self,x):
         x = self.conv1(x)
@@ -149,16 +149,9 @@ class RegNet(nn.Module):
         x = self.relu(x)
         return x
 
-    def classifier(self,x):
-        x = self.avgpool(x)
-        x = torch.flatten(x, 1)
-        x = self.fc(x)
-        return x
-
     def forward(self, x):
-        x = self.feats(x)
-        x = self.classifier(x)
-        return x
+        feats = self.feats(x)
+        return [feats[i] for i in self.out_indices]
 
 def regnetx_002(**kwargs):
     return RegNet(Bottleneck, [1, 1, 4, 7], [24, 56, 152, 368], group_width=8, **kwargs)
@@ -210,4 +203,4 @@ def regnetx_320(**kwargs):
 img = torch.zeros(1,3,640,640)
 net = regnetx_320()
 res = net(img)
-print(res.shape)
+print([i.shape for i in res])
