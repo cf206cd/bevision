@@ -199,8 +199,3 @@ def regnetx_160(**kwargs):
 
 def regnetx_320(**kwargs):
     return RegNet(Bottleneck, [2, 7, 13, 1], [336, 672, 1344, 2520], group_width=168, **kwargs)
-
-img = torch.zeros(1,3,640,640)
-net = regnetx_320()
-res = net(img)
-print([i.shape for i in res])
