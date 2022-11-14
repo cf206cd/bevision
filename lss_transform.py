@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+from utils import calculate_birds_eye_view_parameters
 class LSSTransform(nn.Module):
     def __init__(self, grid_conf=None, input_dim=None, numC_input=512,
                  numC_Trans=512, downsample=16, use_quickcumsum=True):
@@ -14,7 +14,7 @@ class LSSTransform(nn.Module):
                 'dbound': [4.0, 45.0, 1.0], }
 
         self.grid_conf = grid_conf
-        self.dx, self.bx, self.nx = gen_dx_bx(self.grid_conf['xbound'],
+        self.dx, self.bx, self.nx = calculate_birds_eye_view_parameters(self.grid_conf['xbound'],
                                               self.grid_conf['ybound'],
                                               self.grid_conf['zbound'],
                                               )
@@ -174,15 +174,6 @@ class LSSTransform(nn.Module):
         bev_feat = bev_feat.view(B, S, *bev_feat.shape[1:])
 
         return bev_feat
-
-def gen_dx_bx(xbound, ybound, zbound):
-    dx = torch.Tensor([row[2] for row in [xbound, ybound, zbound]]) #分别为x, y, z三个方向上的网格间距
-    bx = torch.Tensor(
-        [row[0] + row[2]/2.0 for row in [xbound, ybound, zbound]]) #分别为x, y, z三个方向上第一个格子中心的坐标
-    nx = torch.Tensor([(row[1] - row[0]) / row[2]
-                      for row in [xbound, ybound, zbound]]) #分别为x, y, z三个方向上格子的数量
-
-    return dx, bx, nx
 
 def cumsum_trick(x, geom_feats, ranks):
     x = x.cumsum(0)
