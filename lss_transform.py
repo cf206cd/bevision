@@ -2,8 +2,9 @@ import torch
 import torch.nn as nn
 from utils import calculate_birds_eye_view_parameters
 class LSSTransform(nn.Module):
-    def __init__(self, grid_conf=None, input_dim=None, numC_input=512,
-                 numC_Trans=512, downsample=16, use_quickcumsum=True):
+    def __init__(self, grid_conf=None, input_dim=None, #input_dim: origin image size
+                numC_input=512,numC_trans=512, 
+                downsample=16, use_quickcumsum=True):
 
         super().__init__()
         if grid_conf is None:
@@ -25,9 +26,9 @@ class LSSTransform(nn.Module):
         self.frustum = self.create_frustum()
         self.D, _, _, _ = self.frustum.shape
         self.numC_input = numC_input
-        self.numC_Trans = numC_Trans
+        self.numC_trans = numC_trans
         self.depthnet = nn.Conv2d(
-            self.numC_input, self.D + self.numC_Trans, kernel_size=1, padding=0)
+            self.numC_input, self.D + self.numC_trans, kernel_size=1, padding=0)
         self.use_quickcumsum = use_quickcumsum
 
     def get_depth_dist(self, x):
@@ -55,8 +56,7 @@ class LSSTransform(nn.Module):
         Returns B x N x D x H/downsample x W/downsample x 3
         """
 
-        B, S, N, _ = trans.shape
-        BS = B * S
+        B, N, _ = trans.shape
 
         # flatten (batch & sequence)
         rots = rots.flatten(0, 1)
@@ -69,9 +69,9 @@ class LSSTransform(nn.Module):
         # undo post-transformation
         # B x N x D x H x W x 3
         # 抵消数据增强及预处理对像素的变化
-        points = self.frustum - post_trans.view(BS, N, 1, 1, 1, 3)
+        points = self.frustum - post_trans.view(B, N, 1, 1, 1, 3)
         points = torch.inverse(post_rots).view(
-            BS, N, 1, 1, 1, 3, 3).matmul(points.unsqueeze(-1)) 
+            B, N, 1, 1, 1, 3, 3).matmul(points.unsqueeze(-1)) 
 
         # cam_to_ego
         
@@ -82,8 +82,8 @@ class LSSTransform(nn.Module):
         # 将像素坐标d[u,v,1]^T转换到车体坐标系下的[x,y,z]^T
         # d[u,v,1]^T=intrins*rots^(-1)*([x,y,z]^T-trans)，这里需要倒过来
         combine = rots.matmul(torch.inverse(intrins))
-        points = combine.view(BS, N, 1, 1, 1, 3, 3).matmul(points).squeeze(-1)
-        points += trans.view(BS, N, 1, 1, 1, 3)
+        points = combine.view(B, N, 1, 1, 1, 3, 3).matmul(points).squeeze(-1)
+        points += trans.view(B, N, 1, 1, 1, 3)
 
         return points
 
@@ -102,6 +102,7 @@ class LSSTransform(nn.Module):
 
         # 将[-m,m]的范围转换到[0,m*2]，计算栅格坐标并取整
         geom_feats = ((geom_feats - (bx - dx / 2.)) / dx).long()  
+
         # 将像素映射关系同样展平，一共有B*N*D*H*W*3
         geom_feats = geom_feats.view(Nprime, 3)
         batch_ix = torch.cat([torch.full([Nprime // B, 1], ix,
@@ -147,23 +148,24 @@ class LSSTransform(nn.Module):
         return final
 
     def forward(self, x, rots, trans, intrins, post_rots, post_trans, flip_x=False, flip_y=False):
-        B, S, N, C, H, W = x.shape
-        # flatten (batch, seq, num_cam)
-        x = x.view(B * S * N, C, H, W)
+        B, N, C, H, W = x.shape
+        # flatten (batch, num_cam)
+        x = x.view(B * N, C, H, W)
         x = self.depthnet(x)
 
         # 前D个通道估计深度
         depth = self.get_depth_dist(x[:, :self.D])
 
-        # 后numC_Trans个通道提取特征
-        cvt_feature = x[:, self.D:(self.D + self.numC_Trans)]
+        # 后numC_trans个通道提取特征
+        cvt_feature = x[:, self.D:(self.D + self.numC_trans)]
 
         # 深度乘特征，见LSS论文
         volume = depth.unsqueeze(1) * cvt_feature.unsqueeze(2)
-        volume = volume.view(B * S, N, self.numC_Trans, self.D, H, W)
+
+        volume = volume.view(B, N, self.numC_trans, self.D, H, W)
         volume = volume.permute(0, 1, 3, 4, 5, 2)
 
-        # 每个像素对应的视锥体的车体坐标[B * S, N, D, H, W, 3]
+        # 每个像素对应的视锥体的车体坐标[B , N, D, H, W, 3]
         geom = self.get_geometry(rots, trans, intrins, post_rots, post_trans)
         if flip_x:
             geom[..., 0] = -geom[..., 0]
@@ -171,7 +173,7 @@ class LSSTransform(nn.Module):
             geom[..., 1] = -geom[..., 1]
 
         bev_feat = self.voxel_pooling(geom, volume)
-        bev_feat = bev_feat.view(B, S, *bev_feat.shape[1:])
+        bev_feat = bev_feat.view(B, *bev_feat.shape[1:])
 
         return bev_feat
 
@@ -213,3 +215,17 @@ class QuickCumsum(torch.autograd.Function):
 
         return val, None, None
 
+if __name__ == "__main__":
+    input = torch.zeros(4,6,64,80,80)
+    rots = torch.zeros(4,6,3,3)
+    trans = torch.zeros(4,6,3)
+    intrins = torch.zeros(4,6,3,3)
+    post_rots = torch.zeros(4,6,3,3)
+    post_trans = torch.zeros(4,6,3)
+    for i in range(3):
+        rots[:,:,i,i] = 1
+        intrins[:,:,i,i] = 1
+        post_rots[:,:,i,i] = 1
+    net = LSSTransform(input_dim=(640,640),numC_input=64,numC_trans=64,downsample=8)
+    output = net(input,rots,trans,intrins,post_rots,post_trans)
+    print(output.shape)

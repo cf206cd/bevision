@@ -63,7 +63,7 @@ class Bottleneck(nn.Module):
 
 class RegNet(nn.Module):
 
-    def __init__(self, block, layers, widths, out_indices = [2,3], zero_init_residual=True,
+    def __init__(self, block, layers, widths, input_channel = 3,out_indices = [1,2,3], zero_init_residual=True,
                  group_width=1, replace_stride_with_dilation=None,
                  norm_layer=None):
         super().__init__()
@@ -81,7 +81,7 @@ class RegNet(nn.Module):
             raise ValueError("replace_stride_with_dilation should be None "
                              "or a 4-element tuple, got {}".format(replace_stride_with_dilation))
         self.group_width = group_width
-        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=3, stride=2, padding=1,
+        self.conv1 = nn.Conv2d(input_channel, self.inplanes, kernel_size=3, stride=2, padding=1,
                                bias=False)
         self.bn1 = norm_layer(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
@@ -199,3 +199,13 @@ def regnetx_160(**kwargs):
 
 def regnetx_320(**kwargs):
     return RegNet(Bottleneck, [2, 7, 13, 1], [336, 672, 1344, 2520], group_width=168, **kwargs)
+
+if __name__ == "__main__":
+    input1 = torch.zeros(6,3,640,640)
+    net1 = regnetx_002()
+    output1 = net1(input1)
+    print([i.shape for i in output1])
+    input2 = torch.zeros(4,64,128,128)
+    net2 = regnetx_002(input_channel=64,out_indices=[2,3],replace_stride_with_dilation=[True,True,True,False])
+    output2 = net2(input2)
+    print([i.shape for i in output2])
