@@ -43,11 +43,11 @@ class Model(nn.Module):
         self.seg_head = VanillaSegmentHead(64,num_seg_classes)
         self.num_images = num_images
 
-    def forward(self,x,rots,trans,intrins,post_rots,post_trans):
+    def forward(self,x,rots,trans,intrins_inverse,post_rots,post_trans):
         image_feature = self.image_encoder(x)
         image_fpn_feature = self.image_fpn(image_feature)[0]
         image_fpn_feature = image_fpn_feature.reshape(-1,self.num_images,*image_fpn_feature.shape[1:])
-        lss_feature = self.lss_transformer(image_fpn_feature,rots,trans,intrins,post_rots,post_trans)
+        lss_feature = self.lss_transformer(image_fpn_feature,rots,trans,intrins_inverse,post_rots,post_trans)
         bev_feature = self.bev_encoder(lss_feature)
         bev_fpn_feature = self.bev_fpn(bev_feature)[0]
         grid_cells = {}
@@ -62,18 +62,18 @@ if __name__ == '__main__':
     x = torch.zeros(6,3,640,640).to(device)
     rots = torch.zeros(1,6,3,3).to(device)
     trans = torch.zeros(1,6,3).to(device)
-    intrins = torch.zeros(1,6,3,3).to(device)
-    post_rots = torch.zeros(1,6,3,3).to(device)
+    intrins_inverse = torch.zeros(1,6,3,3).to(device)
+    post_rots_inverse = torch.zeros(1,6,3,3).to(device)
     post_trans = torch.zeros(1,6,3).to(device)
     for i in range(3):
         rots[:,:,i,i] = 1
-        intrins[:,:,i,i] = 1
-        post_rots[:,:,i,i] = 1
+        intrins_inverse[:,:,i,i] = 1
+        post_rots_inverse[:,:,i,i] = 1
     net = Model().to(device)
     import time
     start = time.time()
     for i in range(100):
-        det_res,seg_res = net(x,rots,trans,intrins,post_rots,post_trans)
+        det_res,seg_res = net(x,rots,trans,intrins_inverse,post_rots_inverse,post_trans)
     end = time.time()
     print("FPS",100/(end-start))
     print([i.shape for i in det_res])
