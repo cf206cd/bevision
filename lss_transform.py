@@ -168,8 +168,8 @@ class LSSTransform(nn.Module):
         volume = volume.permute(0, 1, 3, 4, 5, 2)
         return volume
 
-    def forward(self, x, rots=None, trans=None, intrins=None, post_rots=None, post_trans=None, flip_x=False, flip_y=False):
-        if self.training:
+    def forward(self, x, rots=None, trans=None, intrins=None, post_rots=None, post_trans=None, flip_x=False, flip_y=False, use_pre_geom = False):
+        if use_pre_geom is False:
             # 每个像素对应的视锥体的车体坐标[B, N, D, H, W, 3]
             geom = self.get_geometry(rots, trans, intrins, post_rots, post_trans)
             if flip_x:
@@ -316,7 +316,7 @@ if __name__ == "__main__":
     print(output1.shape)
     net.eval()
     net.set_geometry(net.get_volume(input).shape,rots,trans,intrins_inverse,post_rots_inverse,post_trans)
-    output2 = net(input)
+    output2 = net(input,use_pre_geom = True)
     print(output2.shape)
     print(torch.sum(output2-output1))
    
