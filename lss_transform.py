@@ -61,7 +61,7 @@ class LSSTransform(nn.Module):
         # flatten (batch & sequence)
         rots = rots.flatten(0, 1)
         trans = trans.flatten(0, 1)
-        intrins_inverse = torch.inverse(intrins).flatten(0, 1).float()
+        intrins = torch.inverse(intrins).flatten(0, 1).float()
         # inverse can only work for float32
         post_rots = post_rots.flatten(0, 1).float()
         post_trans = post_trans.flatten(0, 1)
@@ -80,8 +80,8 @@ class LSSTransform(nn.Module):
                             ), 5) # 将像素坐标(u,v,1)根据深度d变成齐次坐标(du,dv,d)
 
         # 将像素坐标d[u,v,1]^T转换到车体坐标系下的[x,y,z]^T
-        # d[u,v,1]^T=intrins_inverse*rots^(-1)*([x,y,z]^T-trans)，这里需要倒过来
-        combine = rots.matmul(intrins_inverse)
+        # d[u,v,1]^T=intrins*rots^(-1)*([x,y,z]^T-trans)，这里需要倒过来
+        combine = rots.matmul(intrins)
         points = combine.view(B, N, 1, 1, 1, 3, 3).matmul(points).squeeze(-1)
         points += trans.view(B, N, 1, 1, 1, 3)
 
@@ -168,7 +168,7 @@ class LSSTransform(nn.Module):
         volume = volume.permute(0, 1, 3, 4, 5, 2)
         return volume
 
-    def forward(self, x, rots=None, trans=None, intrins=None, post_rots=None, post_trans=None, flip_x=False, flip_y=False, use_pre_geom = False):
+    def forward(self, x, rots=None, trans=None, intrins=None, post_rots=None, post_trans=None, flip_x=False, flip_y=False, use_pre_geom=False):
         if use_pre_geom is False:
             # 每个像素对应的视锥体的车体坐标[B, N, D, H, W, 3]
             geom = self.get_geometry(rots, trans, intrins, post_rots, post_trans)
@@ -304,18 +304,18 @@ if __name__ == "__main__":
     input = torch.zeros(4,6,64,20,20)
     rots = torch.zeros(4,6,3,3)
     trans = torch.zeros(4,6,3)
-    intrins_inverse = torch.zeros(4,6,3,3)
-    post_rots_inverse = torch.zeros(4,6,3,3)
+    intrins = torch.zeros(4,6,3,3)
+    post_rots = torch.zeros(4,6,3,3)
     post_trans = torch.zeros(4,6,3)
     for i in range(3):
         rots[:,:,i,i] = 1
-        intrins_inverse[:,:,i,i] = 1
-        post_rots_inverse[:,:,i,i] = 1
+        intrins[:,:,i,i] = 1
+        post_rots[:,:,i,i] = 1
     net = LSSTransform(input_dim=(160,160),numC_input=64,numC_trans=64,downsample=8)
-    output1 = net(input,rots,trans,intrins_inverse,post_rots_inverse,post_trans)
+    output1 = net(input,rots,trans,intrins,post_rots,post_trans)
     print(output1.shape)
     net.eval()
-    net.set_geometry(net.get_volume(input).shape,rots,trans,intrins_inverse,post_rots_inverse,post_trans)
+    net.set_geometry(net.get_volume(input).shape,rots,trans,intrins,post_rots,post_trans)
     output2 = net(input,use_pre_geom = True)
     print(output2.shape)
     print(torch.sum(output2-output1))
