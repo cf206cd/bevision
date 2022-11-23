@@ -6,6 +6,9 @@ from lss_transform import LSSTransform
 from grid_sampler import GridSampler
 from det_head import CenterPointHead
 from seg_head import VanillaSegmentHead
+from temporal_module import TemporalModule
+from future_prediction import FuturePrediction
+from pred_head import PredictHead
 
 grid_confs = {
 'det':{
@@ -30,12 +33,12 @@ grid_confs = {
 
 device = torch.device("cuda:0")
 x = torch.zeros(6,3,640,640).to(device)
-rots = torch.zeros(1,6,3,3).to(device)
-trans = torch.zeros(1,6,3).to(device)
-intrins = torch.zeros(1,6,3,3).to(device)
-post_rots = torch.zeros(1,6,3,3).to(device)
-post_trans = torch.zeros(1,6,3).to(device)
-class Model(nn.Module):
+rots = torch.zeros(1,6,3,3)
+trans = torch.zeros(1,6,3)
+intrins = torch.zeros(1,6,3,3)
+post_rots = torch.zeros(1,6,3,3)
+post_trans = torch.zeros(1,6,3)
+class TemporalModel(nn.Module):
     def __init__(self,num_det_classes=10,num_seg_classes=10,num_images=6):
         super().__init__()
         self.image_encoder = regnetx_002()
@@ -52,7 +55,7 @@ class Model(nn.Module):
         self.seg_head = VanillaSegmentHead(64,num_seg_classes)
         self.num_images = num_images
 
-    def forward(self,x,rots=None, trans=None, intrins=None, post_rots=None, post_trans=None,use_pre_geom=False):
+    def forward(self,rots=None, trans=None, intrins=None, post_rots=None, post_trans=None,use_pre_geom=False):
         image_feature = self.image_encoder(x)
         image_fpn_feature = self.image_fpn(image_feature)[0]
         image_fpn_feature = image_fpn_feature.reshape(-1,self.num_images,*image_fpn_feature.shape[1:])
@@ -64,10 +67,7 @@ class Model(nn.Module):
             grid_cells[task] = grid_sampler(bev_fpn_feature)
         det_res = self.det_head(grid_cells['det'])
         seg_res = self.seg_head(grid_cells['seg'])
-        return {
-                "detection result":det_res,
-                "segmentation result":seg_res
-        }
+        return det_res,seg_res
 
 if __name__ == '__main__':
     for i in range(3):
@@ -76,21 +76,17 @@ if __name__ == '__main__':
         post_rots[:,:,i,i] = 1
     net = Model().to(device)
     import time
-    # start = time.time()
-    # for i in range(100):
-    #     res = net(x,rots,trans,intrins,post_rots,post_trans)
-    # end = time.time()
-    # print("FPS without pre geom",100/(end-start))
-    # for i in res.items():
-    #     print(i[0])
-    #     for ii in i[1].items():
-    #         print(ii[0],ii[1].shape)
     start = time.time()
     for i in range(100):
-        res = net(x,use_pre_geom=True)
+        det_res,seg_res = net(x,rots,trans,intrins,post_rots,post_trans)
+    end = time.time()
+    print("FPS without pre geom",100/(end-start))
+    print([i.shape for i in det_res])
+    print(seg_res.shape)
+    start = time.time()
+    for i in range(100):
+        det_res,seg_res = net(x,use_pre_geom=True)
     end = time.time()
     print("FPS with pre geom",100/(end-start))
-    for i in res.items():
-        print(i[0])
-        for ii in i[1].items():
-            print(ii[0],ii[1].shape)
+    print([i.shape for i in det_res])
+    print(seg_res.shape)

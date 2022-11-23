@@ -9,13 +9,13 @@ class FPN(nn.Module):
         self.lateral_convs = nn.ModuleList()
         self.fpn_convs = nn.ModuleList()
         self.out_ids = out_ids
-        for i,in_channel in enumerate(in_channels):
+        for _,in_channel in enumerate(in_channels):
             lateral_conv = nn.Sequential(
                 nn.Conv2d(in_channel,out_channels,1, padding=0, bias=False),
                 nn.BatchNorm2d(out_channels),
                 nn.ReLU(True))
             self.lateral_convs.append(lateral_conv)
-            if i in out_ids:
+            if _ in out_ids:
                 fpn_conv =  nn.Sequential(
                     nn.Conv2d(out_channels,out_channels,3,padding=1, bias=False),
                     nn.BatchNorm2d(out_channels),

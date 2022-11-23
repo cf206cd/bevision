@@ -69,12 +69,12 @@ class LSSTransform(nn.Module):
         # undo post-transformation
         # B x N x D x H x W x 3
         # 抵消数据增强及预处理对像素的变化
-        points = self.frustum - post_trans.view(B, N, 1, 1, 1, 3)
+
+        points = self.frustum.to(post_trans.device) - post_trans.view(B, N, 1, 1, 1, 3)
         points = torch.inverse(post_rots).view(
             B, N, 1, 1, 1, 3, 3).matmul(points.unsqueeze(-1)) 
 
         # cam_to_ego
-        
         points = torch.cat((points[:, :, :, :, :, :2] * points[:, :, :, :, :, 2:3],
                             points[:, :, :, :, :, 2:3]
                             ), 5) # 将像素坐标(u,v,1)根据深度d变成齐次坐标(du,dv,d)
@@ -275,11 +275,16 @@ def cumsum_trick(x, geom_feats, ranks):
 class QuickCumsum(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, geom_feats, ranks):
+        """The features `x` and `geometry` are ranked by voxel positions."""
+        # Cumulative sum of all features.
         x = x.cumsum(0)
+
+        # Indicates the change of voxel.
         kept = torch.ones(x.shape[0], device=x.device, dtype=torch.bool)
         kept[:-1] = (ranks[1:] != ranks[:-1])
 
         x, geom_feats = x[kept], geom_feats[kept]
+        # Calculate sum of features within a voxel.
         x = torch.cat((x[:1], x[1:] - x[:-1]))
 
         # save kept for backward
@@ -294,6 +299,8 @@ class QuickCumsum(torch.autograd.Function):
     def backward(ctx, gradx, gradgeom):
         kept, = ctx.saved_tensors
         back = torch.cumsum(kept, 0)
+        # Since the operation is summing, we simply need to send gradient
+        # to all elements that were part of the summation process.
         back[kept] -= 1
 
         val = gradx[back]

@@ -58,10 +58,13 @@ class CenterPointHead(nn.Module):
         x = self.shared_conv(x)
         heatmap = self.heatmap_head(x)
         regression  = self.regression_head(x)
-        return heatmap,regression
+        return {
+                "detection heatmap":heatmap,
+                "detection regression":regression
+        }
 
 if __name__ == "__main__":
     x = torch.zeros(4,64,128,128)
     net = CenterPointHead(64,10)
     res = net(x)
-    print([i.shape for i in res])
+    print([(i[0],i[1].shape) for i in res.items()])
