@@ -50,7 +50,7 @@ class LSSTransform(nn.Module):
         frustum = torch.stack((xs, ys, ds), -1)
         return nn.Parameter(frustum, requires_grad=False)
 
-    def get_geometry(self, rots, trans, intrins, post_rots, post_trans):
+    def get_geometry(self, rots, trans, intrins):
         """Determine the (x,y,z) locations (in the ego frame)
         of the points in the point cloud.
         Returns B x N x D x H/downsample x W/downsample x 3
@@ -62,17 +62,12 @@ class LSSTransform(nn.Module):
         rots = rots.flatten(0, 1)
         trans = trans.flatten(0, 1)
         intrins = torch.inverse(intrins).flatten(0, 1).float()
-        # inverse can only work for float32
-        post_rots = post_rots.flatten(0, 1).float()
-        post_trans = post_trans.flatten(0, 1)
 
         # undo post-transformation
         # B x N x D x H x W x 3
         # 抵消数据增强及预处理对像素的变化
 
-        points = self.frustum.to(post_trans.device) - post_trans.view(B, N, 1, 1, 1, 3)
-        points = torch.inverse(post_rots).view(
-            B, N, 1, 1, 1, 3, 3).matmul(points.unsqueeze(-1)) 
+        points = self.frustum.unsqueeze(0).unsqueeze(0).unsqueeze(-1)
 
         # cam_to_ego
         points = torch.cat((points[:, :, :, :, :, :2] * points[:, :, :, :, :, 2:3],
@@ -87,7 +82,8 @@ class LSSTransform(nn.Module):
 
         return points
 
-    def voxel_pooling(self, geom_feats, x):#将图像特征沿着pillars方向进行sum pooling，其中使用了cumsum trick，参考LSS论文4.2节
+    def voxel_pooling(self, geom_feats, x):
+         # batch, n_cameras, depth, height, width, channels
         B, N, D, H, W, C = x.shape
         Nprime = B * N * D * H * W
         nx = self.nx.to(torch.long)
@@ -168,99 +164,18 @@ class LSSTransform(nn.Module):
         volume = volume.permute(0, 1, 3, 4, 5, 2)
         return volume
 
-    def forward(self, x, rots=None, trans=None, intrins=None, post_rots=None, post_trans=None, flip_x=False, flip_y=False, use_pre_geom=False):
-        if use_pre_geom is False:
-            # 每个像素对应的视锥体的车体坐标[B, N, D, H, W, 3]
-            geom = self.get_geometry(rots, trans, intrins, post_rots, post_trans)
-            if flip_x:
-                geom[..., 0] = -geom[..., 0]
-            if flip_y:
-                geom[..., 1] = -geom[..., 1]
+    def forward(self, x, rots, trans, intrins):
+        # 每个像素对应的视锥体的车体坐标[B, N, D, H, W, 3]
+        geom = self.get_geometry(rots, trans, intrins)
 
-            volume = self.get_volume(x)
-            bev_feat = self.voxel_pooling(geom, volume)
-            bev_feat = bev_feat.view(x.shape[0], *bev_feat.shape[1:])
-        else:
-            assert self.pre_geom
-            geom_feats = self.geom_feats.to(x.device)
-            ranks = self.ranks.to(x.device)
-            bev_feat = self.bev_feat.to(x.device)
-            kept = self.kept.to(x.device)
-            if flip_x:
-                geom_feats[..., 0] = -geom_feats[..., 0]
-            if flip_y:
-                geom_feats[..., 1] = -geom_feats[..., 1]
-            
-            volume = self.get_volume(x)
-            B, N, D, H, W, C = volume.shape
-            Nprime = B * N * D * H * W
-            # flatten x
-            # 将图像特征展平，一共有 (B*N*D*H*W)*C个点
-            volume = volume.reshape(Nprime, C)
-            volume = volume[kept]
-            volume = volume[self.sorts]
+        # 每个特征图上的像素对应的深度上的特征
+        volume = self.get_volume(x)
 
-            # 一个batch的一个格子里只留一个点
-            if self.use_quickcumsum:
-                volume, geom_feats = QuickCumsum.apply(volume, geom_feats, ranks)
-            else:
-                # cumsum trick
-                volume, geom_feats = cumsum_trick(volume, geom_feats, ranks)
-
-            # griddify (B x C x Z x X x Y)
-            # 将x按照栅格坐标放到final中
-            bev_feat[geom_feats[:, 3], :, geom_feats[:, 2],
-                geom_feats[:, 1], geom_feats[:, 0]] = volume
-
-            # collapse Z
-            # 消除掉z维
-            bev_feat = torch.cat(bev_feat.unbind(dim=2), 1)
-            bev_feat = bev_feat.view(x.shape[0], *bev_feat.shape[1:])
+        # 将图像特征沿着pillars方向进行sum pooling，其中使用了cumsum trick，参考LSS论文4.2节
+        bev_feat = self.voxel_pooling(geom, volume)
+        
+        bev_feat = bev_feat.view(x.shape[0], *bev_feat.shape[1:])
         return bev_feat
-
-    def set_geometry(self,feature_shape, rots, trans, intrins, post_rots, post_trans):
-        self.pre_geom = True
-        geom_feats = self.get_geometry(rots, trans, intrins, post_rots, post_trans)
-        B, N, D, H, W, C = feature_shape
-        Nprime = B * N * D * H * W
-        nx = self.nx.to(torch.long)
-
-        # flatten indices
-        bx = self.bx.type_as(geom_feats)
-        dx = self.dx.type_as(geom_feats)
-        nx = self.nx.type_as(geom_feats).long()
-
-        # 将[-m,m]的范围转换到[0,m*2]，计算栅格坐标并取整
-        geom_feats = ((geom_feats - (bx - dx / 2.)) / dx).long()  
-
-        # 将像素映射关系同样展平，一共有(B*N*D*H*W)*3个点 
-        geom_feats = geom_feats.view(Nprime, 3)
-        batch_ix = torch.cat([torch.full([Nprime // B, 1], ix,
-                                         device=geom_feats.device, dtype=torch.long) for ix in range(B)])
-
-        geom_feats = torch.cat((geom_feats, batch_ix), 1)
-
-        geom_feats = geom_feats.long()
-
-        # filter out points that are outside box
-        # 过滤掉在边界线之外的点
-        self.kept = (geom_feats[:, 0] >= 0) & (geom_feats[:, 0] < nx[0]) \
-            & (geom_feats[:, 1] >= 0) & (geom_feats[:, 1] < nx[1]) \
-            & (geom_feats[:, 2] >= 0) & (geom_feats[:, 2] < nx[2])
-
-        # [nx, ny, nz, n_batch]
-        geom_feats = geom_feats[self.kept]
-
-        # get tensors from the same voxel next to each other
-        # 给每一个点一个rank值，rank相等的点在同一个batch，并且在在同一个格子里面
-        ranks = geom_feats[:, 0] * (nx[1] * nx[2] * B) \
-            + geom_feats[:, 1] * (nx[2] * B) \
-            + geom_feats[:, 2] * B \
-            + geom_feats[:, 3]
-        self.sorts = ranks.argsort()
-        self.geom_feats, self.ranks = geom_feats[self.sorts], ranks[self.sorts]
-        self.bev_feat = torch.zeros((B, C, nx[2], nx[1], nx[0]), device=geom_feats.device)
-
 
 def cumsum_trick(x, geom_feats, ranks):
     x = x.cumsum(0)
@@ -299,10 +214,10 @@ class QuickCumsum(torch.autograd.Function):
     def backward(ctx, gradx, gradgeom):
         kept, = ctx.saved_tensors
         back = torch.cumsum(kept, 0)
+
         # Since the operation is summing, we simply need to send gradient
         # to all elements that were part of the summation process.
         back[kept] -= 1
-
         val = gradx[back]
 
         return val, None, None
@@ -312,18 +227,10 @@ if __name__ == "__main__":
     rots = torch.zeros(4,6,3,3)
     trans = torch.zeros(4,6,3)
     intrins = torch.zeros(4,6,3,3)
-    post_rots = torch.zeros(4,6,3,3)
-    post_trans = torch.zeros(4,6,3)
     for i in range(3):
         rots[:,:,i,i] = 1
         intrins[:,:,i,i] = 1
-        post_rots[:,:,i,i] = 1
     net = LSSTransform(input_dim=(160,160),numC_input=64,numC_trans=64,downsample=8)
-    output1 = net(input,rots,trans,intrins,post_rots,post_trans)
-    print(output1.shape)
-    net.eval()
-    net.set_geometry(net.get_volume(input).shape,rots,trans,intrins,post_rots,post_trans)
-    output2 = net(input,use_pre_geom = True)
-    print(output2.shape)
-    print(torch.sum(output2-output1))
+    output = net(input,rots,trans,intrins)
+    print(output.shape)
    
