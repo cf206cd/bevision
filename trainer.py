@@ -1,4 +1,4 @@
 from model import BEVerse
-from dataset
+from data 
 class Trainer:
     def __init__()
