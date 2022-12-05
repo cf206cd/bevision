@@ -2,23 +2,25 @@ import torch
 import torch.nn as nn
 from regnet import regnetx_002
 from fpn import FPN
-from lss_transform import LSSTransform
+from lss_transform import LSSTransform,LSSTransformWithFixedParam
 from grid_sampler import GridSampler
 from det_head import CenterPointHead
 from seg_head import VanillaSegmentHead
 
+
 class BEVerse(nn.Module):
-    def __init__(self,grid_confs,num_det_classes=10,num_seg_classes=10,num_images=6):
+    def __init__(self,grid_confs,num_det_classes=10,num_seg_classes=10,num_images=6,image_size=(640,640)):
         super().__init__()
         self.image_encoder = regnetx_002()
         self.image_fpn = FPN(in_channels=[56,152,368],out_channels=64)
-        self.lss_transformer = LSSTransform(input_dim=(640,640),numC_input=64,numC_trans=64,downsample=8)
+        self.grid_conf = grid_confs['det']
+        self.image_size = image_size
+        self.lss_transformer = LSSTransform(grid_conf=self.grid_conf,image_size=self.image_size,numC_input=64,numC_trans=64,downsample=8)
         self.bev_encoder = regnetx_002(input_channel=64,out_indices=[2,3],replace_stride_with_dilation=[True,True,True,False])
         self.bev_fpn = FPN(in_channels=[152,368],out_channels=64,out_ids=[0])
-        grid_conf = grid_confs['det']
         self.grid_samplers = {}
         for task,conf in grid_confs.items():
-            self.grid_samplers[task] = GridSampler(grid_conf,conf)
+            self.grid_samplers[task] = GridSampler(self.grid_conf,conf)
         self.det_head = CenterPointHead(64,num_det_classes)
         self.seg_head = VanillaSegmentHead(64,num_seg_classes)
         self.num_images = num_images
@@ -35,10 +37,26 @@ class BEVerse(nn.Module):
             grid_cells[task] = grid_sampler(bev_fpn_feature)
         det_res = self.det_head(grid_cells['det'])
         seg_res = self.seg_head(grid_cells['seg'])
-        return {
-                "detection result":det_res,
-                "segmentation result":seg_res
-        }
+        return det_res,seg_res
+
+class BEVerseWithFixedParam(BEVerse):
+    def __init__(self,rots,trans,intrins,**kwargs):
+        super().__init__(**kwargs)
+        self.lss_transformer = LSSTransformWithFixedParam(rots,trans,intrins,self.image_size,numC_input=64,numC_trans=64,downsample=8,grid_conf=self.grid_conf)
+    
+    def forward(self, x):
+        image_feature = self.image_encoder(x)
+        image_fpn_feature = self.image_fpn(image_feature)[0]
+        image_fpn_feature = image_fpn_feature.reshape(-1,self.num_images,*image_fpn_feature.shape[1:])
+        lss_feature = self.lss_transformer(image_fpn_feature)
+        bev_feature = self.bev_encoder(lss_feature)
+        bev_fpn_feature = self.bev_fpn(bev_feature)[0]
+        grid_cells = {}
+        for task,grid_sampler in self.grid_samplers.items():
+            grid_cells[task] = grid_sampler(bev_fpn_feature)
+        det_res = self.det_head(grid_cells['det'])
+        seg_res = self.seg_head(grid_cells['seg'])
+        return det_res,seg_res
 
 if __name__ == '__main__':
     grid_confs = {
@@ -61,23 +79,27 @@ if __name__ == '__main__':
         'dbound': [1.0, 60.0, 1.0],
     }
     }
+    import time
     device = torch.device("cuda:0")
     x = torch.zeros(6,3,640,640).to(device)
-    rots = torch.zeros(1,6,3,3).to(device)
-    trans = torch.zeros(1,6,3).to(device)
-    intrins = torch.zeros(1,6,3,3).to(device)
+    rots = torch.zeros(1,6,3,3)
+    trans =torch.zeros(1,6,3)
+    intrins = torch.zeros(1,6,3,3)
     for i in range(3):
         rots[:,:,i,i] = 1
         intrins[:,:,i,i] = 1
-    net = BEVerse(grid_confs).to(device)
-    import time
+
+    net1 = BEVerse(grid_confs).to(device)
     start = time.time()
     for i in range(100):
-        res = net(x,rots,trans,intrins)
+        res1 = net1(x,rots.to(device),trans.to(device),intrins.to(device))
     end = time.time()
     print("FPS:",100/(end-start))
-    for i in res.items():
-        print(i[0])
-        for ii in i[1].items():
-            print(ii[0],ii[1].shape)
-    
+    print(res1[0][0].shape,res1[0][1].shape,res1[1].shape)
+    net2 = BEVerseWithFixedParam(rots,trans,intrins,grid_confs=grid_confs).to(device)
+    start = time.time()
+    for i in range(100):
+        res2 = net2(x)
+    end = time.time()
+    print("FPS:",100/(end-start))
+    print(res2[0][0].shape,res2[0][1].shape,res2[1].shape)

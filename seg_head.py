@@ -13,10 +13,10 @@ class VanillaSegmentHead(nn.Module):
             )
 
     def forward(self,x):
-        return {"map segmetation":self.head(x)}
+        return self.head(x)
 
 if __name__ == "__main__":
     x = torch.zeros(4,64,200,400)
     net = VanillaSegmentHead(64,10)
     res = net(x)
-    print([(i[0],i[1].shape) for i in res.items()])
+    print(res.shape)
