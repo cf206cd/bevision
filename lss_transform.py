@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from utils import calculate_birds_eye_view_parameters
+from utils import generate_grid
 class LSSTransform(nn.Module):
     def __init__(self, grid_conf=None, image_size=None, #image_size: origin image size, H x W
                 numC_input=512,numC_trans=512, 
@@ -8,9 +8,9 @@ class LSSTransform(nn.Module):
 
         super().__init__()
         self.grid_conf = grid_conf
-        self.dx, self.bx, self.nx = calculate_birds_eye_view_parameters(self.grid_conf['xbound'],
+        self.dx, self.bx, self.nx = generate_grid([self.grid_conf['xbound'],
                                               self.grid_conf['ybound'],
-                                              self.grid_conf['zbound'],
+                                              self.grid_conf['zbound']]
                                               )
 
         self.image_size = image_size
@@ -131,9 +131,6 @@ class LSSTransform(nn.Module):
         # flatten x
         # 将图像特征展平，一共有 (B*N*D*H*W)*C个点
         x = x.reshape(-1, x.shape[-1])
-        print(x.shape)
-        print(kept.shape)
-        print(sorts.shape)
         x = x[kept][sorts]
         geom_feats = geom_feats.to(x.device)
         ranks = ranks.to(x.device)

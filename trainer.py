@@ -22,24 +22,13 @@ class Trainer:
             for iter,data in enumerate(self.dataloader):
                 print("training iterateion:",iter)
                 self.optimizer.zero_grad()
-                x,rots,trans,intrins = self.generate_inputs(data['data'])
+                x,rots,trans,intrins,heatmap_gt,regression_gt,segment_gt = data
                 predicts = self.model(x,rots,trans,intrins)
-                targets = self.generate_targets(data['sample_count'],data['instances'],data['map'])
-                loss = self.loss(predicts,targets)
+                loss = self.loss(predicts,heatmap_gt,regression_gt,segment_gt)
                 loss.backward()
                 self.optimizer.step()
                 self.scheduler.step()
-
-    def generate_inputs(self,data):
-        x = torch.stack([i['raw'] for i in data]).permute(1,0,2,3,4)
-        x = x.reshape(-1,*x.shape[2:])
-        rots =  torch.stack([i['rotation'] for i in data]).permute(1,0,2,3)
-        trans =  torch.stack([i['translation'] for i in data]).permute(1,0,2)
-        intrins =  torch.stack([i['camera_intrinsic'] for i in data]).permute(1,0,2,3)
-        return x,rots,trans,intrins
-
-    def generate_targets(self,sample_count,instances,map_token):
-        pass
+    
 
 if __name__ == '__main__':
     config = Config

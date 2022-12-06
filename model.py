@@ -7,13 +7,12 @@ from grid_sampler import GridSampler
 from det_head import CenterPointHead
 from seg_head import VanillaSegmentHead
 
-
 class BEVerse(nn.Module):
     def __init__(self,grid_confs,num_det_classes=10,num_seg_classes=10,num_images=6,image_size=(640,640)):
         super().__init__()
         self.image_encoder = regnetx_002()
         self.image_fpn = FPN(in_channels=[56,152,368],out_channels=64)
-        self.grid_conf = grid_confs['det']
+        self.grid_conf = grid_confs['base']
         self.image_size = image_size
         self.lss_transformer = LSSTransform(grid_conf=self.grid_conf,image_size=self.image_size,numC_input=64,numC_trans=64,downsample=8)
         self.bev_encoder = regnetx_002(input_channel=64,out_indices=[2,3],replace_stride_with_dilation=[True,True,True,False])
@@ -26,6 +25,7 @@ class BEVerse(nn.Module):
         self.num_images = num_images
 
     def forward(self, x, rots, trans, intrins):
+        x = x.reshape(-1,*x.shape[2:])
         image_feature = self.image_encoder(x)
         image_fpn_feature = self.image_fpn(image_feature)[0]
         image_fpn_feature = image_fpn_feature.reshape(-1,self.num_images,*image_fpn_feature.shape[1:])
@@ -42,9 +42,10 @@ class BEVerse(nn.Module):
 class BEVerseWithFixedParam(BEVerse):
     def __init__(self,rots,trans,intrins,**kwargs):
         super().__init__(**kwargs)
-        self.lss_transformer = LSSTransformWithFixedParam(rots,trans,intrins,self.image_size,numC_input=64,numC_trans=64,downsample=8,grid_conf=self.grid_conf)
+        self.lss_transformer = LSSTransformWithFixedParam(rots,trans,intrins,image_size=self.image_size,numC_input=64,numC_trans=64,downsample=8,grid_conf=self.grid_conf)
     
     def forward(self, x):
+        x = x.reshape(-1,*x.shape[2:])
         image_feature = self.image_encoder(x)
         image_fpn_feature = self.image_fpn(image_feature)[0]
         image_fpn_feature = image_fpn_feature.reshape(-1,self.num_images,*image_fpn_feature.shape[1:])
@@ -60,31 +61,27 @@ class BEVerseWithFixedParam(BEVerse):
 
 if __name__ == '__main__':
     grid_confs = {
-    'det':{
+    'base':{
         'xbound': [-51.2, 51.2, 0.8],
         'ybound': [-51.2, 51.2, 0.8],
         'zbound': [-10.0, 10.0, 20.0],
         'dbound': [1.0, 60.0, 1.0],
     },
-    'mot': {
+    'det': {
         'xbound': [-50.0, 50.0, 0.5],
         'ybound': [-50.0, 50.0, 0.5],
-        'zbound': [-10.0, 10.0, 20.0],
-        'dbound': [1.0, 60.0, 1.0],
     },
     'seg': {
-        'xbound': [-30.0, 30.0, 0.15],
-        'ybound': [-15.0, 15.0, 0.15],
-        'zbound': [-10.0, 10.0, 20.0],
-        'dbound': [1.0, 60.0, 1.0],
+        'xbound': [-15.0, 15.0, 0.15],
+        'ybound': [-30.0, 30.0, 0.15],
     }
     }
     import time
-    device = torch.device("cuda:0")
-    x = torch.zeros(6,3,640,640).to(device)
-    rots = torch.zeros(1,6,3,3)
-    trans =torch.zeros(1,6,3)
-    intrins = torch.zeros(1,6,3,3)
+    device = torch.device("cpu")
+    x = torch.zeros(2,6,3,640,640).to(device)
+    rots = torch.zeros(2,6,3,3)
+    trans =torch.zeros(2,6,3)
+    intrins = torch.zeros(2,6,3,3)
     for i in range(3):
         rots[:,:,i,i] = 1
         intrins[:,:,i,i] = 1

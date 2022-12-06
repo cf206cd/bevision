@@ -39,9 +39,8 @@ class Loss(nn.Module):
         self.gamma1 = gamma1
         self.gamma2 = gamma2
 
-    def forward(self,inputs,targets):
+    def forward(self,inputs,heatmap_gt,regression_gt,segment_gt):
         heatmap,regression,segment = inputs
-        heatmap_gt,regression_gt,segment_gt = targets
         loss = self.heatmap_loss(heatmap,heatmap_gt)+ \
                 self.gamma1*self.regression_loss(regression,regression_gt)+ \
                 self.gamma2*self.segment_loss(segment,segment_gt)
