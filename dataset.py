@@ -17,11 +17,9 @@ class NuScenesDataset(VisionDataset):
         self.samples_data = self.nusc.sample_data
         self.normalize_image = torchvision.transforms.Compose((
                 torchvision.transforms.ToTensor(),
-                torchvision.transforms.Normalize(mean=config.MEAN,
-                std=config.STD),
+                torchvision.transforms.Normalize(mean=config.MEAN,std=config.STD),
                 torchvision.transforms.Resize(config.INPUT_IMAGE_SIZE)
                 ))
-        self.max_instance_num = config.MAX_INSTANCE_NUM
         self.data_catogories = [item['name'] for item in self.nusc.category]
 
     def __getitem__(self, index):
@@ -48,6 +46,7 @@ class NuScenesDataset(VisionDataset):
             instance['size'] = np.array(ann_record['size'],dtype=np.float32)#width, length, height
             instance['rotation'] = quaternion.as_rotation_matrix(quaternion.from_float_array(ann_record['rotation'])).astype(np.float32)
             instance['category'] = self.data_catogories.index(ann_record['category_name'])+1
+            print(instance['translation'])
             instances.append(instance)
         scene = self.nusc.get('scene',sample_record['scene_token'])
         log = self.nusc.get('log',scene['log_token'])
@@ -70,9 +69,11 @@ class NuScenesDataset(VisionDataset):
     def generate_targets(self,sample_count,instances,map_token):
         det_resolution,det_start_position,det_dimension = generate_grid([self.config.GRID_CONFIG['det']['xbound'],
                                                         self.config.GRID_CONFIG['det']['ybound']])
-        heatmap_gt = np.zeros(len(self.data_catogories),det_dimension.numpy()[:2].astype(int))
+        heatmap_gt = np.zeros((len(self.data_catogories),*det_dimension.numpy()[:2].astype(int)))
         for instance in instances:
-            radius = self.gassian_radius(instance['size'][:2])
+            radius = self.gaussian_radius(instance['size'][:2])
+            radius = max(0,int(radius))
+            center = -instance['translation'][-2]
 
         return np.zeros(3,dtype=np.float32),np.zeros(3,dtype=np.float32),np.zeros(3,dtype=np.float32)
 
@@ -98,6 +99,30 @@ class NuScenesDataset(VisionDataset):
         r3  = (b3 + sq3) / 2
         return min(r1, r2, r3)
 
+    def gaussian2D(self, shape, sigma=1):
+        m, n = [(ss - 1.) / 2. for ss in shape]
+        y, x = np.ogrid[-m:m+1,-n:n+1]
+
+        h = np.exp(-(x * x + y * y) / (2 * sigma * sigma))
+        h[h < np.finfo(h.dtype).eps * h.max()] = 0
+        return h
+
+    def draw_umich_gaussian(self,heatmap, center, radius, k=1):
+        diameter = 2 * radius + 1
+        gaussian = self.gaussian2D((diameter, diameter), sigma=diameter / 6)
+        
+        x, y = int(center[0]), int(center[1])
+
+        height, width = heatmap.shape[0:2]
+            
+        left, right = min(x, radius), min(width - x, radius + 1)
+        top, bottom = min(y, radius), min(height - y, radius + 1)
+
+        masked_heatmap  = heatmap[y - top:y + bottom, x - left:x + right]
+        masked_gaussian = gaussian[radius - top:radius + bottom, radius - left:radius + right]
+        if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0: # TODO debug
+            np.maximum(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
+        return heatmap
 
 if __name__ == "__main__":
     nusc_dataset = NuScenesDataset()
