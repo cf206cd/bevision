@@ -8,11 +8,10 @@ class LSSTransform(nn.Module):
 
         super().__init__()
         self.grid_conf = grid_conf
-        self.dx, self.bx, self.nx = generate_grid([self.grid_conf['xbound'],
+        self.dx, self.bx, self.nx = [torch.tensor(res) for res in generate_grid([self.grid_conf['xbound'],
                                               self.grid_conf['ybound'],
-                                              self.grid_conf['zbound']]
-                                              )
-
+                                              self.grid_conf['zbound']])]
+    
         self.image_size = image_size
         self.downsample = downsample
 
@@ -88,18 +87,16 @@ class LSSTransform(nn.Module):
         return volume
 
     def voxel_pooling_prepare(self, geom_feats):
-        nx = self.nx.to(torch.long)
-
         # flatten indices
         bx = self.bx.type_as(geom_feats)
         dx = self.dx.type_as(geom_feats)
         nx = self.nx.type_as(geom_feats).long()
 
-        # 将[-m,m]的范围转换到[0,m*2]，计算栅格坐标并取整
+        # 将[m,n]的范围转换到[0,n-m]，计算栅格坐标并取整
         geom_feats = ((geom_feats - (bx - dx / 2.)) / dx).long()  
         B = geom_feats.shape[0]
 
-        # 将像素映射关系同样展平，一共有(B*N*D*H*W)*3个点 
+        # 将像素映射关系同样展平，一共有(B*N*D*H*W)个点 
         geom_feats = geom_feats.reshape(-1, 3)
         batch_ix = torch.cat([torch.full([geom_feats.shape[0]//B,1], ix,
                                          device=geom_feats.device, dtype=torch.long) for ix in range(B)])
@@ -111,6 +108,7 @@ class LSSTransform(nn.Module):
         kept = (geom_feats[:, 0] >= 0) & (geom_feats[:, 0] < nx[0]) \
             & (geom_feats[:, 1] >= 0) & (geom_feats[:, 1] < nx[1]) \
             & (geom_feats[:, 2] >= 0) & (geom_feats[:, 2] < nx[2])
+
         # [nx, ny, nz, n_batch]
         geom_feats = geom_feats[kept]
 
@@ -121,7 +119,6 @@ class LSSTransform(nn.Module):
             + geom_feats[:, 2] * B \
             + geom_feats[:, 3]
         sorts = ranks.argsort()
-
         return kept,sorts,geom_feats,ranks
 
     def voxel_pooling(self, geom_feats, x):
@@ -145,10 +142,10 @@ class LSSTransform(nn.Module):
         # griddify (B x C x Z x X x Y)
         # 将x按照栅格坐标放到final中
         nx = self.nx.long()
-        final = torch.zeros((B, C, nx[2], nx[1], nx[0]), device=x.device)
+        final = torch.zeros((B, C, nx[2], nx[0], nx[1]), device=x.device)
 
         final[geom_feats[:, 3], :, geom_feats[:, 2],
-              geom_feats[:, 1], geom_feats[:, 0]] = x
+              geom_feats[:, 0], geom_feats[:, 1]] = x
 
         # collapse Z
         # 消除掉z维
@@ -165,8 +162,7 @@ class LSSTransform(nn.Module):
 
         # 将图像特征沿着pillars方向进行sum pooling，其中使用了cumsum trick，参考LSS论文4.2节
         bev_feat = self.voxel_pooling(geom, volume)
-        
-        bev_feat = bev_feat.reshape(x.shape[0], *bev_feat.shape[1:])
+
         return bev_feat
 
 class LSSTransformWithFixedParam(LSSTransform):
@@ -197,15 +193,14 @@ class LSSTransformWithFixedParam(LSSTransform):
         # griddify (B x C x Z x X x Y)
         # 将x按照栅格坐标放到final中
         nx = self.nx.long()
-        bev_feat = torch.zeros((B, C, nx[2], nx[1], nx[0]), device=x.device)
+        bev_feat = torch.zeros((B, C, nx[2], nx[0], nx[1]), device=x.device)
 
         bev_feat[geom_feats[:, 3], :, geom_feats[:, 2],
-              geom_feats[:, 1], geom_feats[:, 0]] = x
+              geom_feats[:, 0], geom_feats[:, 1]] = x
 
         # collapse Z
         # 消除掉z维
         bev_feat = torch.cat(bev_feat.unbind(dim=2), 1)
-        bev_feat = bev_feat.reshape(B, *bev_feat.shape[1:])
         return bev_feat
 
 def cumsum_trick(x, geom_feats, ranks):
@@ -255,10 +250,10 @@ class QuickCumsum(torch.autograd.Function):
 
 if __name__ == "__main__":
     grid_conf = {
-        'xbound': [-51.2, 51.2, 0.8],
-        'ybound': [-51.2, 51.2, 0.8],
+        'xbound': [-10.0, 50.0, 0.125],
+        'ybound': [-15.0, 15.0, 0.125],
         'zbound': [-10.0, 10.0, 20.0],
-        'dbound': [4.0, 45.0, 1.0], }
+        'dbound': [1.0, 60.0, 1.0],}
     input = torch.zeros(2,6,64,80,80)
     rots = torch.zeros(2,6,3,3)
     trans = torch.zeros(2,6,3)

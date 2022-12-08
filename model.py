@@ -61,19 +61,20 @@ class BEVerseWithFixedParam(BEVerse):
 
 if __name__ == '__main__':
     grid_confs = {
-    'base':{
-        'xbound': [-51.2, 51.2, 0.8],
-        'ybound': [-51.2, 51.2, 0.8],
+    'base': {
+        'xbound': [-10.0, 50.0, 0.5],
+        'ybound': [-15.0, 15.0, 0.5],
         'zbound': [-10.0, 10.0, 20.0],
         'dbound': [1.0, 60.0, 1.0],
     },
+    #for 2D gird:x forward,y left
     'det': {
-        'xbound': [-50.0, 50.0, 0.5],
-        'ybound': [-50.0, 50.0, 0.5],
+        'xbound': [-10.0, 50.0, 0.5],
+        'ybound': [-10.0, 10.0, 0.5],
     },
     'seg': {
-        'xbound': [-15.0, 15.0, 0.15],
-        'ybound': [-30.0, 30.0, 0.15],
+        'xbound': [-10.0, 50.0, 0.25],
+        'ybound': [-15.0, 15.0, 0.25],
     }
     }
     import time
