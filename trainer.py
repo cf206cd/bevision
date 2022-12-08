@@ -8,7 +8,7 @@ from config import Config
 class Trainer:
     def __init__(self,config):
         self.config = config
-        self.model = BEVerse(config.GRID_CONFIG,image_size=config.INPUT_IMAGE_SIZE).to(torch.device(config.DEVICE))
+        self.model = BEVerse(config.GRID_CONFIG,num_det_classes=config.NUM_DET_CLASSES,num_seg_classes=config.NUM_SEG_CLASSES,image_size=config.INPUT_IMAGE_SIZE).to(torch.device(config.DEVICE),)
         self.epoch = config.EPOCH
         self.dataset = NuScenesDataset()
         self.dataloader = DataLoader(self.dataset,batch_size=config.BATCH_SIZE)
@@ -20,16 +20,19 @@ class Trainer:
         for epoch in range(self.epoch):
             print("training epoch:",epoch)
             for iter,data in enumerate(self.dataloader):
-                print("training iterateion:",iter)
-                self.optimizer.zero_grad()
-                x,rots,trans,intrins,heatmap_gt,regression_gt,segment_gt = data
-                predicts = self.model(x,rots,trans,intrins)
-                loss = self.loss(predicts,heatmap_gt,regression_gt,segment_gt)
-                loss.backward()
-                self.optimizer.step()
-                self.scheduler.step()
+                with torch.autograd.set_detect_anomaly(True):
+                    print("training iterateion:",iter)
+                    x,rots,trans,intrins,heatmap_gt,regression_gt,segment_gt = data
+                    self.optimizer.zero_grad()
+                    predicts = self.model(x,rots,trans,intrins)
+                    targets = [heatmap_gt,regression_gt,segment_gt]
+                    loss = self.loss(predicts,targets)
+                    print("loss:",loss.item())
+                    loss.backward()
+                    self.optimizer.step()
+                    self.scheduler.step()
+                
     
-
 if __name__ == '__main__':
     config = Config
     trainer = Trainer(config)

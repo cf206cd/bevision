@@ -20,7 +20,7 @@ class NuScenesDataset(VisionDataset):
                 torchvision.transforms.Normalize(mean=config.MEAN,std=config.STD),
                 torchvision.transforms.Resize(config.INPUT_IMAGE_SIZE)
                 ))
-        self.data_catogories = [item['name'] for item in self.nusc.category]
+        self.catogories = [item['name'] for item in self.nusc.category]
 
     def __getitem__(self, index):
         sample_record = self.samples[index]
@@ -45,7 +45,7 @@ class NuScenesDataset(VisionDataset):
             instance['translation'] = ann_record['translation']#x:forward,y:left,z:up
             instance['size'] = ann_record['size']#width, length, height
             instance['rotation'] = ann_record['rotation']
-            instance['category'] = self.data_catogories.index(ann_record['category_name'])+1
+            instance['category'] = self.catogories.index(ann_record['category_name'])
             instances.append(instance)
         scene = self.nusc.get('scene',sample_record['scene_token'])
         log = self.nusc.get('log',scene['log_token'])
@@ -59,7 +59,7 @@ class NuScenesDataset(VisionDataset):
 
     def generate_inputs(self,data):
         x = np.stack([self.transform_image(i['raw']) for i in data])
-        rots = np.stack(i['rotation'] for i in data)
+        rots = np.stack(self.rotation_matrix(i['rotation']) for i in data)
         trans = np.stack(i['translation'] for i in data)
         intrinsics =  np.stack([self.transform_intrinsic(np.array(i['camera_intrinsic'],dtype=np.float32),i['width'],i['height']) for i in data])
         return x,rots,trans,intrinsics
@@ -72,25 +72,50 @@ class NuScenesDataset(VisionDataset):
     def rotation_matrix(self,rotation):
         return quaternion.as_rotation_matrix(quaternion.from_float_array(rotation)).astype(np.float32)
 
+    def euler_angles(self,rotation):
+        return quaternion.as_euler_angles(quaternion.from_float_array(rotation)).astype(np.float32)
+
     def generate_targets(self,egopose,instances,map_token):
         ego_pose_translation = np.array(egopose['translation'],dtype=np.float32)
         ego_pose_rotation = self.rotation_matrix(egopose['rotation'])
         det_resolution,det_start_position,det_dimension = generate_grid([self.config.GRID_CONFIG['det']['xbound'],
                                                         self.config.GRID_CONFIG['det']['ybound']])
-
-        heatmap_gt = np.zeros((len(self.data_catogories),*det_dimension[:2].astype(int)))
+        seg_resolution,seg_start_position,seg_dimension = generate_grid([self.config.GRID_CONFIG['seg']['xbound'],
+                                                        self.config.GRID_CONFIG['seg']['ybound']])
+        heatmap_gt = np.zeros((len(self.catogories),*det_dimension[:2].astype(int)))
+        regression_gt = np.zeros((5,*det_dimension[:2].astype(int)))
+        segment_gt = np.zeros((self.config.NUM_SEG_CLASSES,*seg_dimension[:2].astype(int)))
         for instance in instances:
-            radius = max(0,int(self.gaussian_radius(instance['size'][:2])))
+            det_size = (instance['size'][:2]/ det_resolution)
+            radius = max(0,int(self.gaussian_radius(det_size)))
             center = np.linalg.inv(ego_pose_rotation).dot(np.array(instance['translation'],dtype=np.float32)-ego_pose_translation)
             center_loc = det_dimension[:2]-((center[:2] - (det_start_position - det_resolution / 2.)) / det_resolution)[::-1]
-            print(center[:2],center_loc)
             category = instance['category']
-            self.draw_umich_gaussian(heatmap_gt[category],center,radius)
 
-        return np.zeros(3,dtype=np.float32),np.zeros(3,dtype=np.float32),np.zeros(3,dtype=np.float32)
+            rotation_matrix = np.linalg.inv(ego_pose_rotation).dot(self.rotation_matrix(instance['rotation']))
+            rotation = quaternion.from_rotation_matrix(rotation_matrix)
+            euler_angles = quaternion.as_euler_angles(rotation)
+            value = np.array((
+                center_loc[0]-int(center_loc[0]),
+                center_loc[1]-int(center_loc[1]),
+                euler_angles[0],
+                instance['size'][0],
+                instance['size'][1]))
+            # if self.catogories[category].startswith('vehicle'):
+            #     print(value)
+            heatmap_gt[category] = self.draw_umich_gaussian(heatmap_gt[category],center_loc,radius)
+            regression_gt = self.draw_dense_regression(regression_gt,heatmap_gt[category],center_loc,radius,value)
+        
+        # for i in range(len(self.catogories)):
+        #     self.save_heatmap(heatmap_gt,i)
+        return heatmap_gt,regression_gt,segment_gt
+
+    # def save_heatmap(self,heatmap,i):
+    #     import cv2
+    #     cv2.imwrite("{}.jpg".format(self.catogories[i]),heatmap[i]*255)
 
     def gaussian_radius(self, det_size, min_overlap=0.7):
-        height, width = det_size
+        width, height  = det_size
 
         a1  = 1
         b1  = (height + width)
@@ -119,7 +144,7 @@ class NuScenesDataset(VisionDataset):
         h[h < np.finfo(h.dtype).eps * h.max()] = 0
         return h
 
-    def draw_umich_gaussian(self,heatmap, center, radius, k=1):
+    def draw_umich_gaussian(self, heatmap, center, radius, k=1):
         diameter = 2 * radius + 1
         gaussian = self.gaussian2D((diameter, diameter), sigma=diameter / 6)
         
@@ -135,6 +160,33 @@ class NuScenesDataset(VisionDataset):
         if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0: 
             np.maximum(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
         return heatmap
+
+    def draw_dense_regression(self,regmap,heatmap,center,radius,value):
+        diameter = 2 * radius + 1
+        gaussian = self.gaussian2D((diameter, diameter), sigma=diameter / 6)
+        value = np.array(value, dtype=np.float32).reshape(-1, 1, 1)
+        dim = value.shape[0]
+        reg = np.ones((dim, diameter*2+1, diameter*2+1), dtype=np.float32) * value
+        
+        x, y = int(center[0]), int(center[1])
+
+        height, width = heatmap.shape[0:2]
+            
+        left, right = min(x, radius), min(width - x, radius + 1)
+        top, bottom = min(y, radius), min(height - y, radius + 1)
+
+        masked_heatmap = heatmap[y - top:y + bottom, x - left:x + right]
+        masked_regmap = regmap[:, y - top:y + bottom, x - left:x + right]
+        masked_gaussian = gaussian[radius - top:radius + bottom,
+                                    radius - left:radius + right]
+        masked_reg = reg[:, radius - top:radius + bottom,
+                            radius - left:radius + right]
+        if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:
+            idx = (masked_gaussian >= masked_heatmap).reshape(
+            1, masked_gaussian.shape[0], masked_gaussian.shape[1])
+            masked_regmap = (1-idx) * masked_regmap + idx * masked_reg
+        regmap[:, y - top:y + bottom, x - left:x + right] = masked_regmap
+        return regmap
 
 if __name__ == "__main__":
     nusc_dataset = NuScenesDataset()

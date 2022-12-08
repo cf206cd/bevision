@@ -13,13 +13,13 @@ class FPN(nn.Module):
             lateral_conv = nn.Sequential(
                 nn.Conv2d(in_channel,out_channels,1, padding=0, bias=False),
                 nn.BatchNorm2d(out_channels),
-                nn.ReLU(True))
+                nn.ReLU())
             self.lateral_convs.append(lateral_conv)
             if _ in out_ids:
                 fpn_conv =  nn.Sequential(
                     nn.Conv2d(out_channels,out_channels,3,padding=1, bias=False),
                     nn.BatchNorm2d(out_channels),
-                    nn.ReLU(True))
+                    nn.ReLU())
                 self.fpn_convs.append(fpn_conv)
 
     def forward(self, inputs):
@@ -30,7 +30,7 @@ class FPN(nn.Module):
         ]
         for i in range(len(laterals)-1,0,-1):
             prev_shape = laterals[i - 1].shape[2:]
-            laterals[i - 1] += F.interpolate(laterals[i], size=prev_shape)
+            laterals[i - 1] = F.interpolate(laterals[i], size=prev_shape)+laterals[i - 1]
         outs = [self.fpn_convs[i](laterals[i]) for i in self.out_ids]
         return outs
 

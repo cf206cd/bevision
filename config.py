@@ -27,8 +27,11 @@ class Config:
     DEVICE = "cpu"
     EPOCH = 100
     
-    BATCH_SIZE = 2
+    BATCH_SIZE = 4
     LEARNING_RATE = 1e-3
     MOMENTUM = 0.99
     LR_SCHE_STEP_SIZE = 1000
     LR_SCHE_GAMMA = 0.1
+
+    NUM_DET_CLASSES = 23
+    NUM_SEG_CLASSES = 2

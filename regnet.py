@@ -34,7 +34,7 @@ class Bottleneck(nn.Module):
         self.bn2 = norm_layer(width)
         self.conv3 = conv1x1(width, planes)
         self.bn3 = norm_layer(planes)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU()
         self.downsample = downsample
         self.stride = stride
 
@@ -55,7 +55,7 @@ class Bottleneck(nn.Module):
         if self.downsample is not None:
             identity = self.downsample(x)
 
-        out += identity
+        out = identity+out
         out = self.relu(out)
 
         return out
@@ -84,7 +84,7 @@ class RegNet(nn.Module):
         self.conv1 = nn.Conv2d(input_channel, self.inplanes, kernel_size=3, stride=2, padding=1,
                                bias=False)
         self.bn1 = norm_layer(self.inplanes)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU()
         self.layer1 = self._make_layer(block, widths[0], layers[0], stride=2,
                                        dilate=replace_stride_with_dilation[0])
         self.layer2 = self._make_layer(block, widths[1], layers[1], stride=2,

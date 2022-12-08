@@ -8,10 +8,12 @@ class LSSTransform(nn.Module):
 
         super().__init__()
         self.grid_conf = grid_conf
-        self.dx, self.bx, self.nx = [torch.tensor(res) for res in generate_grid([self.grid_conf['xbound'],
+        dx, bx, nx = [torch.tensor(res) for res in generate_grid([self.grid_conf['xbound'],
                                               self.grid_conf['ybound'],
                                               self.grid_conf['zbound']])]
-    
+        self.dx = nn.Parameter(dx, requires_grad=False)
+        self.bx = nn.Parameter(bx, requires_grad=False)
+        self.nx = nn.Parameter(nx, requires_grad=False)
         self.image_size = image_size
         self.downsample = downsample
 
@@ -64,7 +66,7 @@ class LSSTransform(nn.Module):
         # d[u,v,1]^T=intrins*rots^(-1)*([x,y,z]^T-trans)，这里需要倒过来
         combine = rots.matmul(intrins)
         points = combine.reshape(-1, N, 1, 1, 1, 3, 3).matmul(points).squeeze(-1)
-        points += trans.reshape(-1, N, 1, 1, 1, 3)
+        points = trans.reshape(-1, N, 1, 1, 1, 3)+points
         return points
 
     def get_volume(self,x):
@@ -86,66 +88,66 @@ class LSSTransform(nn.Module):
         volume = volume.permute(0, 1, 3, 4, 5, 2)
         return volume
 
-    def voxel_pooling_prepare(self, geom_feats):
+    def voxel_pooling_prepare(self, geom):
         # flatten indices
-        bx = self.bx.type_as(geom_feats)
-        dx = self.dx.type_as(geom_feats)
-        nx = self.nx.type_as(geom_feats).long()
+        bx = self.bx.type_as(geom)
+        dx = self.dx.type_as(geom)
+        nx = self.nx.type_as(geom).long()
 
         # 将[m,n]的范围转换到[0,n-m]，计算栅格坐标并取整
-        geom_feats = ((geom_feats - (bx - dx / 2.)) / dx).long()  
-        B = geom_feats.shape[0]
+        geom_grid = ((geom - (bx - dx / 2.)) / dx).long()  
+        B = geom_grid.shape[0]
 
         # 将像素映射关系同样展平，一共有(B*N*D*H*W)个点 
-        geom_feats = geom_feats.reshape(-1, 3)
-        batch_ix = torch.cat([torch.full([geom_feats.shape[0]//B,1], ix,
-                                         device=geom_feats.device, dtype=torch.long) for ix in range(B)])
+        geom_grid = geom_grid.reshape(-1, 3)
+        batch_ix = torch.cat([torch.full([geom_grid.shape[0]//B,1], ix,
+                                         device=geom_grid.device, dtype=torch.long) for ix in range(B)])
 
-        geom_feats = torch.cat((geom_feats, batch_ix), 1)
+        geom_grid = torch.cat((geom_grid, batch_ix), 1)
 
         # filter out points that are outside box
         # 过滤掉在边界线之外的点
-        kept = (geom_feats[:, 0] >= 0) & (geom_feats[:, 0] < nx[0]) \
-            & (geom_feats[:, 1] >= 0) & (geom_feats[:, 1] < nx[1]) \
-            & (geom_feats[:, 2] >= 0) & (geom_feats[:, 2] < nx[2])
+        kept = (geom_grid[:, 0] >= 0) & (geom_grid[:, 0] < nx[0]) \
+            & (geom_grid[:, 1] >= 0) & (geom_grid[:, 1] < nx[1]) \
+            & (geom_grid[:, 2] >= 0) & (geom_grid[:, 2] < nx[2])
 
         # [nx, ny, nz, n_batch]
-        geom_feats = geom_feats[kept]
+        geom_grid = geom_grid[kept]
 
         # get tensors from the same voxel next to each other
         # 给每一个点一个rank值，同一个batch且同一个格子里面的点rank值相等
-        ranks = geom_feats[:, 0] * (nx[1] * nx[2] * B) \
-            + geom_feats[:, 1] * (nx[2] * B) \
-            + geom_feats[:, 2] * B \
-            + geom_feats[:, 3]
+        ranks = geom_grid[:, 0] * (nx[1] * nx[2] * B) \
+            + geom_grid[:, 1] * (nx[2] * B) \
+            + geom_grid[:, 2] * B \
+            + geom_grid[:, 3]
         sorts = ranks.argsort()
-        return kept,sorts,geom_feats,ranks
+        return kept,sorts,geom_grid,ranks
 
-    def voxel_pooling(self, geom_feats, x):
+    def voxel_pooling(self, geom, x):
         B, N, D, H, W, C = x.shape
-        kept,sorts,geom_feats,ranks = self.voxel_pooling_prepare(geom_feats)
+        kept,sorts,geom,ranks = self.voxel_pooling_prepare(geom)
         
         # flatten x
         # 将图像特征展平，一共有 (B*N*D*H*W)*C个点
         x = x.reshape(-1, x.shape[-1])
         x = x[kept][sorts]
-        geom_feats = geom_feats.to(x.device)
+        geom = geom.to(x.device)
         ranks = ranks.to(x.device)
 
         # 一个batch的一个格子里只留一个点
         if self.use_quickcumsum:
-            x, geom_feats = QuickCumsum.apply(x, geom_feats, ranks)
+            x, geom = QuickCumsum.apply(x, geom, ranks)
         else:
             # cumsum trick
-            x, geom_feats = cumsum_trick(x, geom_feats, ranks)
+            x, geom = cumsum_trick(x, geom, ranks)
 
         # griddify (B x C x Z x X x Y)
         # 将x按照栅格坐标放到final中
         nx = self.nx.long()
         final = torch.zeros((B, C, nx[2], nx[0], nx[1]), device=x.device)
 
-        final[geom_feats[:, 3], :, geom_feats[:, 2],
-              geom_feats[:, 0], geom_feats[:, 1]] = x
+        final[geom[:, 3], :, geom[:, 2],
+              geom[:, 0], geom[:, 1]] = x
 
         # collapse Z
         # 消除掉z维
@@ -169,7 +171,7 @@ class LSSTransformWithFixedParam(LSSTransform):
     def __init__(self, rots,trans,intrins, **kwargs):
         super().__init__(**kwargs)
         geom = self.get_geometry(rots, trans, intrins)
-        self.kept,self.sorts,self.geom_feats,self.ranks = self.voxel_pooling_prepare(geom)
+        self.kept,self.sorts,self.geom,self.ranks = self.voxel_pooling_prepare(geom)
 
     def forward(self,x):
         # 每个特征图上的像素对应的深度上的特征
@@ -180,42 +182,42 @@ class LSSTransformWithFixedParam(LSSTransform):
         # 将图像特征展平，一共有 (B*N*D*H*W)*C个点
         x = x.reshape(-1, x.shape[-1])
         x = x[self.kept][self.sorts]
-        geom_feats = self.geom_feats.to(x.device)
+        geom = self.geom.to(x.device)
         ranks = self.ranks.to(x.device)
 
         # 一个batch的一个格子里只留一个点
         if self.use_quickcumsum:
-            x, geom_feats = QuickCumsum.apply(x, geom_feats, ranks)
+            x, geom = QuickCumsum.apply(x, geom, ranks)
         else:
             # cumsum trick
-            x, geom_feats = cumsum_trick(x, geom_feats, ranks)
+            x, geom = cumsum_trick(x, geom, ranks)
 
         # griddify (B x C x Z x X x Y)
         # 将x按照栅格坐标放到final中
         nx = self.nx.long()
         bev_feat = torch.zeros((B, C, nx[2], nx[0], nx[1]), device=x.device)
 
-        bev_feat[geom_feats[:, 3], :, geom_feats[:, 2],
-              geom_feats[:, 0], geom_feats[:, 1]] = x
+        bev_feat[geom[:, 3], :, geom[:, 2],
+              geom[:, 0], geom[:, 1]] = x
 
         # collapse Z
         # 消除掉z维
         bev_feat = torch.cat(bev_feat.unbind(dim=2), 1)
         return bev_feat
 
-def cumsum_trick(x, geom_feats, ranks):
+def cumsum_trick(x, geom, ranks):
     x = x.cumsum(0)
     kept = torch.ones(x.shape[0], device=x.device, dtype=torch.bool)
     kept[:-1] = (ranks[1:] != ranks[:-1])
 
-    x, geom_feats = x[kept], geom_feats[kept]
+    x, geom = x[kept], geom[kept]
     x = torch.cat((x[:1], x[1:] - x[:-1]))
 
-    return x, geom_feats
+    return x, geom
 
 class QuickCumsum(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, geom_feats, ranks):
+    def forward(ctx, x, geom, ranks):
         """The features `x` and `geometry` are ranked by voxel positions."""
         # Cumulative sum of all features.
         x = x.cumsum(0)
@@ -224,17 +226,17 @@ class QuickCumsum(torch.autograd.Function):
         kept = torch.ones(x.shape[0], device=x.device, dtype=torch.bool)
         kept[:-1] = (ranks[1:] != ranks[:-1])
 
-        x, geom_feats = x[kept], geom_feats[kept]
+        x, geom = x[kept], geom[kept]
         # Calculate sum of features within a voxel.
         x = torch.cat((x[:1], x[1:] - x[:-1]))
 
         # save kept for backward
         ctx.save_for_backward(kept)
 
-        # no gradient for geom_feats
-        ctx.mark_non_differentiable(geom_feats)
+        # no gradient for geom
+        ctx.mark_non_differentiable(geom)
 
-        return x, geom_feats 
+        return x, geom 
 
     @staticmethod
     def backward(ctx, gradx, gradgeom):

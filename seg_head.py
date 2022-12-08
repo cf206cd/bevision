@@ -8,7 +8,7 @@ class VanillaSegmentHead(nn.Module):
                 nn.Conv2d(in_channels, in_channels,
                           kernel_size=3, padding=1, bias=False),
                 nn.BatchNorm2d(in_channels),
-                nn.ReLU(inplace=True),
+                nn.ReLU(),
                 nn.Conv2d(in_channels, output_channels, kernel_size=1, padding=0)
             )
 

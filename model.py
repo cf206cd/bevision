@@ -36,8 +36,10 @@ class BEVerse(nn.Module):
         for task,grid_sampler in self.grid_samplers.items():
             grid_cells[task] = grid_sampler(bev_fpn_feature)
         det_res = self.det_head(grid_cells['det'])
+        heatmap = det_res[0]
+        regression = det_res[1]
         seg_res = self.seg_head(grid_cells['seg'])
-        return det_res,seg_res
+        return heatmap,regression,seg_res
 
 class BEVerseWithFixedParam(BEVerse):
     def __init__(self,rots,trans,intrins,**kwargs):
@@ -93,11 +95,11 @@ if __name__ == '__main__':
         res1 = net1(x,rots.to(device),trans.to(device),intrins.to(device))
     end = time.time()
     print("FPS:",100/(end-start))
-    print(res1[0][0].shape,res1[0][1].shape,res1[1].shape)
+    print([res.shape for res in res1])
     net2 = BEVerseWithFixedParam(rots,trans,intrins,grid_confs=grid_confs).to(device)
     start = time.time()
     for i in range(100):
         res2 = net2(x)
     end = time.time()
     print("FPS:",100/(end-start))
-    print(res2[0][0].shape,res2[0][1].shape,res2[1].shape)
+    print([res.shape for res in res2])
