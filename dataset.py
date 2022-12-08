@@ -25,8 +25,7 @@ class NuScenesDataset(VisionDataset):
     def __getitem__(self, index):
         sample_record = self.samples[index]
         data_list = []
-        egopose = self.nusc.get('ego_pose',
-                                self.nusc.get('sample_data', sample_record['data']['LIDAR_TOP'])['ego_pose_token'])
+        ego_pose = self.nusc.get('ego_pose',self.nusc.get('sample_data', sample_record['data']['LIDAR_TOP'])['ego_pose_token'])
         for sd_token in sample_record['data'].values():
             sd_record = self.nusc.get('sample_data', sd_token)
             if sd_record['sensor_modality'] == 'camera':
@@ -51,7 +50,7 @@ class NuScenesDataset(VisionDataset):
         log = self.nusc.get('log',scene['log_token'])
         map_token = log['map_token']
         x,rots,trans,intrinsics = self.generate_inputs(data_list)
-        heatmap_gt,regression_gt,segment_gt = self.generate_targets(egopose,instances,map_token)
+        heatmap_gt,regression_gt,segment_gt = self.generate_targets(ego_pose,instances,map_token)
         return x,rots,trans,intrinsics,heatmap_gt,regression_gt,segment_gt
 
     def __len__(self):
@@ -75,9 +74,9 @@ class NuScenesDataset(VisionDataset):
     def euler_angles(self,rotation):
         return quaternion.as_euler_angles(quaternion.from_float_array(rotation)).astype(np.float32)
 
-    def generate_targets(self,egopose,instances,map_token):
-        ego_pose_translation = np.array(egopose['translation'],dtype=np.float32)
-        ego_pose_rotation = self.rotation_matrix(egopose['rotation'])
+    def generate_targets(self,ego_pose,instances,map_token):
+        ego_pose_translation = np.array(ego_pose['translation'],dtype=np.float32)
+        ego_pose_rotation = self.rotation_matrix(ego_pose['rotation'])
         det_resolution,det_start_position,det_dimension = generate_grid([self.config.GRID_CONFIG['det']['xbound'],
                                                         self.config.GRID_CONFIG['det']['ybound']])
         seg_resolution,seg_start_position,seg_dimension = generate_grid([self.config.GRID_CONFIG['seg']['xbound'],
@@ -193,5 +192,4 @@ if __name__ == "__main__":
     nusc_dataloader = DataLoader(nusc_dataset,batch_size=2)
     for epoch in range(2):
         for iter,data in enumerate(nusc_dataloader):
-            #print("iter:{},data:{}".format(iter,data)) 
-            pass
+            print("iter:{},data:{}".format(iter,data)) 
