@@ -24,10 +24,10 @@ class Config:
 
     INPUT_IMAGE_SIZE = (640,640) #height,width
 
-    DEVICE = "cpu"
+    DEVICE = "cuda:0"
     EPOCH = 100
     
-    BATCH_SIZE = 4
+    BATCH_SIZE = 1
     LEARNING_RATE = 1e-3
     MOMENTUM = 0.99
     LR_SCHE_STEP_SIZE = 1000
@@ -35,3 +35,4 @@ class Config:
 
     NUM_DET_CLASSES = 23
     NUM_SEG_CLASSES = 2
+    WEIGHT_SAVE_PATH = "./model.pt"
