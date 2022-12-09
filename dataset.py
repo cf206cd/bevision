@@ -7,7 +7,7 @@ from PIL import Image
 import numpy as np
 from config import Config
 import quaternion
-from utils import generate_grid
+from utils import generate_grid,to_rotation_matrix,to_euler_angles
 class NuScenesDataset(VisionDataset):
     def __init__(self,version='v1.0-mini', dataroot='D:/dataset/nuscenes', verbose=True, map_resolution=0.1,config=Config):
         super().__init__(dataroot)
@@ -58,7 +58,7 @@ class NuScenesDataset(VisionDataset):
 
     def generate_inputs(self,data):
         x = np.stack([self.transform_image(i['raw']) for i in data])
-        rots = np.stack(self.rotation_matrix(i['rotation']) for i in data)
+        rots = np.stack(to_rotation_matrix(i['rotation']) for i in data)
         trans = np.stack(i['translation'] for i in data)
         intrinsics =  np.stack([self.transform_intrinsic(np.array(i['camera_intrinsic'],dtype=np.float32),i['width'],i['height']) for i in data])
         return x,rots,trans,intrinsics
@@ -68,15 +68,9 @@ class NuScenesDataset(VisionDataset):
         intrinsic[1] *= self.config.INPUT_IMAGE_SIZE[0]/height
         return intrinsic
 
-    def rotation_matrix(self,rotation):
-        return quaternion.as_rotation_matrix(quaternion.from_float_array(rotation)).astype(np.float32)
-
-    def euler_angles(self,rotation):
-        return quaternion.as_euler_angles(quaternion.from_float_array(rotation)).astype(np.float32)
-
     def generate_targets(self,ego_pose,instances,map_token):
         ego_pose_translation = np.array(ego_pose['translation'],dtype=np.float32)
-        ego_pose_rotation = self.rotation_matrix(ego_pose['rotation'])
+        ego_pose_rotation = to_rotation_matrix(ego_pose['rotation'])
         det_resolution,det_start_position,det_dimension = generate_grid([self.config.GRID_CONFIG['det']['xbound'],
                                                         self.config.GRID_CONFIG['det']['ybound']])
         seg_resolution,seg_start_position,seg_dimension = generate_grid([self.config.GRID_CONFIG['seg']['xbound'],
@@ -91,7 +85,7 @@ class NuScenesDataset(VisionDataset):
             center_loc = det_dimension[:2]-((center[:2] - (det_start_position - det_resolution / 2.)) / det_resolution)[::-1]
             category = instance['category']
 
-            rotation_matrix = np.linalg.inv(ego_pose_rotation).dot(self.rotation_matrix(instance['rotation']))
+            rotation_matrix = np.linalg.inv(ego_pose_rotation).dot(to_rotation_matrix(instance['rotation']))
             rotation = quaternion.from_rotation_matrix(rotation_matrix)
             euler_angles = quaternion.as_euler_angles(rotation)
             value = np.array((
@@ -192,4 +186,4 @@ if __name__ == "__main__":
     nusc_dataloader = DataLoader(nusc_dataset,batch_size=2)
     for epoch in range(2):
         for iter,data in enumerate(nusc_dataloader):
-            print("iter:{},data:{}".format(iter,data)) 
+            print("iter:{}".format(iter)) 

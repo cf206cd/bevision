@@ -25,6 +25,10 @@ class LSSTransform(nn.Module):
             self.numC_input, self.D + self.numC_trans, kernel_size=1, padding=0)
         self.use_quickcumsum = use_quickcumsum
 
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.xavier_normal(m.weight)
+
     def get_depth_dist(self, x):
         return x.softmax(dim=1)
 

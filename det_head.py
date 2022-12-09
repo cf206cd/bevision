@@ -28,13 +28,17 @@ class SeparateHead(nn.Module):
                 padding=3 // 2, bias=True))    
 
         self.conv_layers = nn.Sequential(*conv_lists)
-        for m in self.conv_layers.modules():
+
+        for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
         if init_bias is not None:
             self.conv_layers[-1].bias.data.fill_(init_bias)
 
-    def forward(self, x):     
+    def forward(self, x):   
         ret = self.conv_layers(x)
         return ret
 
