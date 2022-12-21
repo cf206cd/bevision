@@ -22,8 +22,7 @@ class Trainer:
             self.model.train()
             for iter,data in enumerate(self.dataloader):
                 print("training iterateion:",iter)
-                x,rots,trans,intrins,heatmap_gt,regression_gt,segment_gt = data
-                x,rots,trans,intrins,heatmap_gt,regression_gt,segment_gt = x.to(self.config.DEVICE),rots.to(self.config.DEVICE),trans.to(self.config.DEVICE),intrins.to(self.config.DEVICE),heatmap_gt.to(self.config.DEVICE),regression_gt.to(self.config.DEVICE),segment_gt.to(self.config.DEVICE)
+                x,rots,trans,intrins,heatmap_gt,regression_gt,segment_gt = [var.to(self.config.DEVICE) for var in data]
                 self.optimizer.zero_grad()
                 predicts = self.model(x,rots,trans,intrins)
                 targets = [heatmap_gt,regression_gt,segment_gt]

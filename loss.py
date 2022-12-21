@@ -78,6 +78,7 @@ class Loss(nn.Module):
         heatmap_loss = self.heatmap_loss(heatmap,heatmap_gt)
         regression_loss = self.regression_loss(regression,regression_gt,mask)
         segment_loss = self.segment_loss(segment,segment_gt)
+        print("heatmap_loss",heatmap_loss.item(),"regression_loss",regression_loss.item())
         loss = heatmap_loss+self.gamma1*regression_loss+self.gamma2*segment_loss
         return loss
 

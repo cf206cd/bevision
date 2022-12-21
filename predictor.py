@@ -4,13 +4,21 @@ import torch.nn as nn
 from config import Config
 import numpy as np
 from PIL import Image
+from utils import generate_grid
 
 class Predictor:
     def __init__(self,config):
         self.config = config
         self.model = BEVerse(config.GRID_CONFIG,num_det_classes=config.NUM_DET_CLASSES,num_seg_classes=config.NUM_SEG_CLASSES,image_size=config.INPUT_IMAGE_SIZE).to(torch.device(config.DEVICE),)
-        self.model.load_state_dict(torch.load(config.MODEL_SAVE_PATH))
+        #self.model.load_state_dict(torch.load(config.MODEL_SAVE_PATH))
         self.model.to(self.config.DEVICE).eval()
+        dx, bx, nx = [torch.tensor(res) for res in generate_grid(
+                [config.GRID_CONFIG['det']['xbound'], config.GRID_CONFIG['det']['ybound']])]
+        xc = torch.arange(
+                bx[0], config.GRID_CONFIG['det']['xbound'][1], dx[0]).to(self.config.DEVICE)
+        yc = torch.arange(
+                bx[1], config.GRID_CONFIG['det']['ybound'][1], dx[1]).to(self.config.DEVICE)
+        self.xyc = torch.stack(torch.meshgrid(xc, yc, indexing='ij'), dim=2)
 
     def predict(self,x,rots,trans,intrins):
         x = torch.tensor(x).to(self.config.DEVICE)
@@ -22,11 +30,11 @@ class Predictor:
         return det_res,seg_res
 
     def post_process(self,heatmap,regression,threshold):
-        heatmap = heatmap
         heatmap = self.nms(heatmap)
-        keep = (heatmap>threshold)
-        index = torch.nonzero(keep)
-        return keep,regression
+        heatmap_values,heatmap_indices = torch.max(heatmap,dim=1)
+        xyc = self.xyc.repeat(heatmap.shape[0],1,1,1)
+        res = torch.concat([heatmap_indices.unsqueeze(-1),xyc,regression.permute(0,2,3,1)],dim=-1)
+        return res[heatmap_values>threshold]
 
     def nms(self,heatmap,kernel_size=3):
         pad = (kernel_size - 1) // 2

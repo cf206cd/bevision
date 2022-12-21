@@ -8,7 +8,7 @@ class LSSTransform(nn.Module):
 
         super().__init__()
         self.grid_conf = grid_conf
-        dx, bx, nx = [torch.tensor(res) for res in generate_grid([self.grid_conf['xbound'],
+        dx, bx, nx = [torch.tensor(x) for x in generate_grid([self.grid_conf['xbound'],
                                               self.grid_conf['ybound'],
                                               self.grid_conf['zbound']])]
         self.dx = nn.Parameter(dx, requires_grad=False)

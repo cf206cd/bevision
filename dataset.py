@@ -23,7 +23,6 @@ class NuScenesDataset(VisionDataset):
         self.catogories = [item['name'] for item in self.nusc.category]
 
     def __getitem__(self, index):
-        index = 2
         sample_record = self.samples[index]
         data_list = []
         ego_pose = self.nusc.get('ego_pose',self.nusc.get('sample_data', sample_record['data']['LIDAR_TOP'])['ego_pose_token'])
@@ -83,7 +82,7 @@ class NuScenesDataset(VisionDataset):
             det_size = (instance['size'][:2]/ det_resolution)
             radius = max(tau,int(self.gaussian_radius(det_size)))
             center = np.linalg.inv(ego_pose_rotation).dot(np.array(instance['translation'],dtype=np.float32)-ego_pose_translation)
-            center_loc = det_dimension[:2]-((center[:2] - (det_start_position - det_resolution / 2.)) / det_resolution)[::-1]
+            center_loc = det_dimension[:2]-((center[:2] - (det_start_position - det_resolution*0.5)) / det_resolution)[::-1]
             category = instance['category']
 
             rotation_matrix = np.linalg.inv(ego_pose_rotation).dot(to_rotation_matrix(instance['rotation']))

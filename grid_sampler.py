@@ -6,7 +6,7 @@ from utils import generate_grid
 class GridSampler(nn.Module):
     def __init__(self,input_grid_conf,target_grid_conf):
         super().__init__()
-        target_resolution, target_start_position, target_dimension = [torch.tensor(res) for res in generate_grid(
+        target_resolution, target_start_position, target_dimension = [torch.tensor(x) for x in generate_grid(
                 [target_grid_conf['xbound'], target_grid_conf['ybound']])]
 
         self.mesh_x = torch.arange(
