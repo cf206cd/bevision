@@ -30,29 +30,29 @@ class BinaryFocalLoss(nn.Module):
         return loss
 
 class HeatmapFocalLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, alpha=2, beta=4, reduction = "none"):
         super().__init__()
+        self.alpha = alpha
+        self.beta = beta
+        self.reduction = reduction
 
     def forward(self,pred,gt):
-        ''' Modified focal loss. Exactly the same as CornerNet.
-            Runs faster and costs a little bit more memory
+        ''' Modified focal loss.
             Arguments:
             pred (batch x c x h x w) without sigmoid 
             gt (batch x c x h x w) between 0 and 1
         '''
-        pos_inds = gt.gt(0).float()
-        neg_inds = gt.eq(0).float()
-        neg_weights = torch.pow(1 - gt, 4)
-        pos_loss = F.logsigmoid(pred) * torch.pow(1 - pred.sigmoid(), 2) * pos_inds
-        neg_loss = F.logsigmoid(-pred) * torch.pow(pred.sigmoid(), 2) * neg_weights * neg_inds
-        num_pos  = pos_inds.float().sum()
-        pos_loss = pos_loss.sum()
-        neg_loss = neg_loss.sum()
+        pos_inds = gt.eq(1).float()
+        neg_inds = gt.lt(1).float()
+        neg_weights = torch.pow(1 - gt, self.beta)
+        pos_loss = F.logsigmoid(pred) * torch.pow(1 - pred.sigmoid(), self.alpha) * pos_inds
+        neg_loss = F.logsigmoid(-pred) * torch.pow(pred.sigmoid(), self.alpha) * neg_weights * neg_inds
 
-        if num_pos == 0:
-            loss = - neg_loss
-        else:
-            loss = - (pos_loss + neg_loss) / num_pos
+        loss = - (pos_loss + neg_loss)
+        if self.reduction == "mean":
+            loss = loss.mean()
+        elif self.reduction == "sum":
+            loss = loss.sum()
         return loss
 
 class SmoothL1Loss(torch.nn.SmoothL1Loss):
@@ -60,13 +60,13 @@ class SmoothL1Loss(torch.nn.SmoothL1Loss):
         super().__init__(**kwargs)
 
     def forward(self,inputs,targets,mask):
-        return super().forward(inputs*mask,targets*mask)
+        return super().forward(inputs[mask],targets[mask])
 
 class Loss(nn.Module):
     def __init__(self,gamma1=1.0,gamma2=1.0):
         super().__init__()
         self.regression_loss =  SmoothL1Loss(reduction="mean")
-        self.heatmap_loss = HeatmapFocalLoss()
+        self.heatmap_loss = HeatmapFocalLoss(reduction="mean")
         self.segment_loss = BinaryFocalLoss(reduction="mean")
         self.gamma1 = gamma1
         self.gamma2 = gamma2
@@ -76,7 +76,9 @@ class Loss(nn.Module):
         heatmap_gt,regression_gt,segment_gt = targets
         mask = regression_gt!=0
         heatmap_loss = self.heatmap_loss(heatmap,heatmap_gt)
+        print("heatmap loss",heatmap_loss)
         regression_loss = self.regression_loss(regression,regression_gt,mask)
+        print("regression loss",regression_loss)
         segment_loss = self.segment_loss(segment,segment_gt)
         loss = heatmap_loss+self.gamma1*regression_loss+self.gamma2*segment_loss
         return loss

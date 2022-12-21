@@ -23,6 +23,7 @@ class NuScenesDataset(VisionDataset):
         self.catogories = [item['name'] for item in self.nusc.category]
 
     def __getitem__(self, index):
+        index = 2
         sample_record = self.samples[index]
         data_list = []
         ego_pose = self.nusc.get('ego_pose',self.nusc.get('sample_data', sample_record['data']['LIDAR_TOP'])['ego_pose_token'])
@@ -68,7 +69,7 @@ class NuScenesDataset(VisionDataset):
         intrinsic[1] *= self.config.INPUT_IMAGE_SIZE[0]/height
         return intrinsic
 
-    def generate_targets(self,ego_pose,instances,map_token):
+    def generate_targets(self,ego_pose,instances,map_token,tau=2):
         ego_pose_translation = np.array(ego_pose['translation'],dtype=np.float32)
         ego_pose_rotation = to_rotation_matrix(ego_pose['rotation'])
         det_resolution,det_start_position,det_dimension = generate_grid([self.config.GRID_CONFIG['det']['xbound'],
@@ -76,11 +77,11 @@ class NuScenesDataset(VisionDataset):
         seg_resolution,seg_start_position,seg_dimension = generate_grid([self.config.GRID_CONFIG['seg']['xbound'],
                                                         self.config.GRID_CONFIG['seg']['ybound']])
         heatmap_gt = np.zeros((len(self.catogories),*det_dimension[:2].astype(int)))
-        regression_gt = np.zeros((5,*det_dimension[:2].astype(int)))
+        regression_gt = np.zeros((6,*det_dimension[:2].astype(int)))
         segment_gt = np.zeros((self.config.NUM_SEG_CLASSES,*seg_dimension[:2].astype(int)))
         for instance in instances:
             det_size = (instance['size'][:2]/ det_resolution)
-            radius = max(0,int(self.gaussian_radius(det_size)))
+            radius = max(tau,int(self.gaussian_radius(det_size)))
             center = np.linalg.inv(ego_pose_rotation).dot(np.array(instance['translation'],dtype=np.float32)-ego_pose_translation)
             center_loc = det_dimension[:2]-((center[:2] - (det_start_position - det_resolution / 2.)) / det_resolution)[::-1]
             category = instance['category']
@@ -91,21 +92,12 @@ class NuScenesDataset(VisionDataset):
             value = np.array((
                 center_loc[0]-int(center_loc[0]),
                 center_loc[1]-int(center_loc[1]),
-                euler_angles[0],
+                np.sin(euler_angles[0]),
+                np.cos(euler_angles[0]),
                 instance['size'][0],
                 instance['size'][1]))
-            # if self.catogories[category].startswith('vehicle'):
-            #     print(value)
-            heatmap_gt[category] = self.draw_umich_gaussian(heatmap_gt[category],center_loc,radius)
-            regression_gt = self.draw_dense_regression(regression_gt,heatmap_gt[category],center_loc,radius,value)
-        
-        # for i in range(len(self.catogories)):
-        #     self.save_heatmap(heatmap_gt,i)
+            heatmap_gt[category],regression_gt = self.draw_map(heatmap_gt[category],regression_gt,center_loc,radius,value)
         return heatmap_gt,regression_gt,segment_gt
-
-    # def save_heatmap(self,heatmap,i):
-    #     import cv2
-    #     cv2.imwrite("{}.jpg".format(self.catogories[i]),heatmap[i]*255)
 
     def gaussian_radius(self, det_size, min_overlap=0.7):
         width, height  = det_size
@@ -137,24 +129,7 @@ class NuScenesDataset(VisionDataset):
         h[h < np.finfo(h.dtype).eps * h.max()] = 0
         return h
 
-    def draw_umich_gaussian(self, heatmap, center, radius, k=1):
-        diameter = 2 * radius + 1
-        gaussian = self.gaussian2D((diameter, diameter), sigma=diameter / 6)
-        
-        x, y = int(center[0]), int(center[1])
-
-        height, width = heatmap.shape[0:2]
-            
-        left, right = min(x, radius), min(width - x, radius + 1)
-        top, bottom = min(y, radius), min(height - y, radius + 1)
-
-        masked_heatmap  = heatmap[y - top:y + bottom, x - left:x + right]
-        masked_gaussian = gaussian[radius - top:radius + bottom, radius - left:radius + right]
-        if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0: 
-            np.maximum(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
-        return heatmap
-
-    def draw_dense_regression(self,regmap,heatmap,center,radius,value):
+    def draw_map(self,heatmap,regression,center,radius,value, k=1):
         diameter = 2 * radius + 1
         gaussian = self.gaussian2D((diameter, diameter), sigma=diameter / 6)
         value = np.array(value, dtype=np.float32).reshape(-1, 1, 1)
@@ -169,17 +144,18 @@ class NuScenesDataset(VisionDataset):
         top, bottom = min(y, radius), min(height - y, radius + 1)
 
         masked_heatmap = heatmap[y - top:y + bottom, x - left:x + right]
-        masked_regmap = regmap[:, y - top:y + bottom, x - left:x + right]
+        masked_regression = regression[:, y - top:y + bottom, x - left:x + right]
         masked_gaussian = gaussian[radius - top:radius + bottom,
                                     radius - left:radius + right]
         masked_reg = reg[:, radius - top:radius + bottom,
                             radius - left:radius + right]
         if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:
+            masked_heatmap = np.maximum(masked_heatmap, masked_gaussian * k)
             idx = (masked_gaussian >= masked_heatmap).reshape(
-            1, masked_gaussian.shape[0], masked_gaussian.shape[1])
-            masked_regmap = (1-idx) * masked_regmap + idx * masked_reg
-        regmap[:, y - top:y + bottom, x - left:x + right] = masked_regmap
-        return regmap
+                1, masked_gaussian.shape[0], masked_gaussian.shape[1])
+            masked_regression = (1-idx) * masked_regression + idx * masked_reg
+        regression[:, y - top:y + bottom, x - left:x + right] = masked_regression
+        return heatmap,regression
 
 if __name__ == "__main__":
     nusc_dataset = NuScenesDataset()

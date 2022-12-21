@@ -45,7 +45,7 @@ class SeparateHead(nn.Module):
 class CenterPointHead(nn.Module):
     """CenterHead for CenterPoint."""
     def __init__(self,in_channels,num_classes,
-                num_task_channel=5,#offset 2,volume 2,rotation 1,all 5
+                num_task_channel=6,#offset 2,volume 2,rotation 2,all 6
                 shared_conv_channel=64,
                 num_shared_convs=2,
                 num_seperate_convs=2,
