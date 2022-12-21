@@ -27,7 +27,7 @@ class LSSTransform(nn.Module):
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.xavier_normal(m.weight)
+                nn.init.xavier_normal_(m.weight)
 
     def get_depth_dist(self, x):
         return x.softmax(dim=1)
