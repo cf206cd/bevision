@@ -28,7 +28,7 @@ class Config:
     EPOCH = 10
     
     BATCH_SIZE = 1
-    LEARNING_RATE = 1e-3
+    LEARNING_RATE = 1e-2
     MOMENTUM = 0.99
     LR_SCHE_STEP_SIZE = 1500
     LR_SCHE_GAMMA = 0.1

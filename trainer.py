@@ -12,7 +12,7 @@ class Trainer:
         self.epoch = config.EPOCH
         self.dataset = NuScenesDataset()
         self.dataloader = DataLoader(self.dataset,batch_size=config.BATCH_SIZE)
-        self.loss = Loss(gamma1=5,gamma2=0)
+        self.loss = Loss(gamma1=0.1,gamma2=0)
         self.optimizer = torch.optim.SGD(self.model.parameters(),config.LEARNING_RATE,config.MOMENTUM)
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,step_size=config.LR_SCHE_STEP_SIZE,gamma=config.LR_SCHE_GAMMA)
 
