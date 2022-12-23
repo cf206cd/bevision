@@ -76,7 +76,7 @@ class NuScenesDataset(VisionDataset):
         seg_resolution,seg_start_position,seg_dimension = generate_grid([self.config.GRID_CONFIG['seg']['xbound'],
                                                         self.config.GRID_CONFIG['seg']['ybound']])
         heatmap_gt = np.zeros((len(self.catogories),*det_dimension[:2].astype(int)))
-        regression_gt = np.zeros((6,*det_dimension[:2].astype(int)))
+        regression_gt = np.zeros((5,*det_dimension[:2].astype(int)))
         segment_gt = np.zeros((self.config.NUM_SEG_CLASSES,*seg_dimension[:2].astype(int)))
         for instance in instances:
             det_size = (instance['size'][:2]/ det_resolution)
@@ -84,15 +84,13 @@ class NuScenesDataset(VisionDataset):
             center = np.linalg.inv(ego_pose_rotation).dot(np.array(instance['translation'],dtype=np.float32)-ego_pose_translation)
             center_loc = det_dimension[:2]-((center[:2] - (det_start_position - det_resolution*0.5)) / det_resolution)[::-1]
             category = instance['category']
-
             rotation_matrix = np.linalg.inv(ego_pose_rotation).dot(to_rotation_matrix(instance['rotation']))
             rotation = quaternion.from_rotation_matrix(rotation_matrix)
             euler_angles = quaternion.as_euler_angles(rotation)
             value = np.array((
-                center_loc[0]-int(center_loc[0]),
-                center_loc[1]-int(center_loc[1]),
-                np.sin(euler_angles[0]),
-                np.cos(euler_angles[0]),
+                (center_loc[0]-np.floor(center_loc[0]))*2-1,
+                (center_loc[1]-np.floor(center_loc[1]))*2-1,
+                euler_angles[0]*0.5/np.pi,
                 instance['size'][0],
                 instance['size'][1]))
             heatmap_gt[category],regression_gt = self.draw_map(heatmap_gt[category],regression_gt,center_loc,radius,value)
@@ -149,7 +147,7 @@ class NuScenesDataset(VisionDataset):
         masked_reg = reg[:, radius - top:radius + bottom,
                             radius - left:radius + right]
         if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:
-            masked_heatmap = np.maximum(masked_heatmap, masked_gaussian * k)
+            np.maximum(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
             idx = (masked_gaussian >= masked_heatmap).reshape(
                 1, masked_gaussian.shape[0], masked_gaussian.shape[1])
             masked_regression = (1-idx) * masked_regression + idx * masked_reg
