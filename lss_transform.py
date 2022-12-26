@@ -125,11 +125,13 @@ class LSSTransform(nn.Module):
             + geom_grid[:, 2] * B \
             + geom_grid[:, 3]
         sorts = ranks.argsort()
-        return kept,sorts,geom_grid,ranks
+        geom_grid = geom_grid[sorts]
+        ranks = ranks[sorts]
+        return geom_grid,ranks,kept,sorts
 
     def voxel_pooling(self, geom, x):
         B, N, D, H, W, C = x.shape
-        kept,sorts,geom,ranks = self.voxel_pooling_prepare(geom)
+        geom,ranks,kept,sorts = self.voxel_pooling_prepare(geom)
         
         # flatten x
         # 将图像特征展平，一共有 (B*N*D*H*W)*C个点
@@ -175,7 +177,7 @@ class LSSTransformWithFixedParam(LSSTransform):
     def __init__(self, rots,trans,intrins, **kwargs):
         super().__init__(**kwargs)
         geom = self.get_geometry(rots, trans, intrins)
-        self.kept,self.sorts,self.geom,self.ranks = self.voxel_pooling_prepare(geom)
+        self.geom,self.ranks,self.kept,self.sorts = self.voxel_pooling_prepare(geom)
 
     def forward(self,x):
         # 每个特征图上的像素对应的深度上的特征
