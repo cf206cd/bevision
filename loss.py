@@ -48,9 +48,14 @@ class HeatmapFocalLoss(nn.Module):
         pos_loss = F.logsigmoid(pred) * torch.pow(1 - pred.sigmoid(), self.alpha) * pos_inds
         neg_loss = F.logsigmoid(-pred) * torch.pow(pred.sigmoid(), self.alpha) * neg_weights * neg_inds
 
-        loss = - (pos_loss + neg_loss)
+        
         if self.reduction == "mean":
-            loss = loss.mean()
+            pos_num = pos_inds.sum()
+            if  pos_num!= 0:
+                loss = - (pos_loss + neg_loss)
+                loss = loss.sum()/pos_num
+            else:
+                loss = -neg_loss
         elif self.reduction == "sum":
             loss = loss.sum()
         return loss
