@@ -9,7 +9,7 @@ class CenterPointHead(nn.Module):
                 num_shared_convs=2,
                 num_seperate_convs=2,
                 bn=True,
-                init_bias=-2.19):#heat map focal loss init trick
+                init_bias=-2.19):#heatmap focal loss init trick
         super().__init__()
         self.shared_conv = SeparateHead(in_channels,shared_conv_channel,num_shared_convs,bn)
         self.heatmap_head = SeparateHead(shared_conv_channel, num_classes, num_seperate_convs, bn, init_bias=init_bias)
