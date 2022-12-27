@@ -4,10 +4,13 @@ from dataset import NuScenesDataset
 from torch.utils.data import DataLoader
 from loss import Loss
 from config import Config
-
+import random
+import torch
+import numpy as np
 class Trainer:
     def __init__(self,config):
         self.config = config
+        self.setup_seed(config.RANDOM_SEED)
         self.model = BEVerse(config.GRID_CONFIG,num_det_classes=config.NUM_DET_CLASSES,num_seg_classes=config.NUM_SEG_CLASSES,image_size=config.INPUT_IMAGE_SIZE).to(torch.device(config.DEVICE),)
         self.epoch = config.EPOCH
         self.dataset = NuScenesDataset()
@@ -15,6 +18,13 @@ class Trainer:
         self.loss = Loss(gamma1=1,gamma2=0)
         self.optimizer = torch.optim.SGD(self.model.parameters(),config.LEARNING_RATE,config.MOMENTUM)
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,step_size=config.LR_SCHE_STEP_SIZE,gamma=config.LR_SCHE_GAMMA)
+
+    # setup random seed
+    def setup_seed(self,seed):
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        np.random.seed(seed)
+        random.seed(seed)
 
     def train(self):
         for epoch in range(self.epoch):

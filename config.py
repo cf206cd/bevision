@@ -24,7 +24,7 @@ class Config:
 
     INPUT_IMAGE_SIZE = (640,640) #height,width
 
-    DEVICE = "cpu"
+    DEVICE = "cuda:0"
     EPOCH = 1
     
     BATCH_SIZE = 1
@@ -37,3 +37,4 @@ class Config:
     NUM_SEG_CLASSES = 2
     MODEL_SAVE_PATH = "./model.pt"
     DET_THRESHOLD = 0
+    RANDOM_SEED = 42

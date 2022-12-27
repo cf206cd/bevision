@@ -10,7 +10,7 @@ class Predictor:
     def __init__(self,config):
         self.config = config
         self.model = BEVerse(config.GRID_CONFIG,num_det_classes=config.NUM_DET_CLASSES,num_seg_classes=config.NUM_SEG_CLASSES,image_size=config.INPUT_IMAGE_SIZE).to(torch.device(config.DEVICE),)
-        #self.model.load_state_dict(torch.load(config.MODEL_SAVE_PATH))
+        self.model.load_state_dict(torch.load(config.MODEL_SAVE_PATH,map_location=config.DEVICE))
         self.model.to(self.config.DEVICE).eval()
         dx, bx, nx = [torch.tensor(res) for res in generate_grid(
                 [config.GRID_CONFIG['det']['xbound'], config.GRID_CONFIG['det']['ybound']])]
