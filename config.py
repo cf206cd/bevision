@@ -36,5 +36,5 @@ class Config:
     NUM_DET_CLASSES = 23
     NUM_SEG_CLASSES = 2
     MODEL_SAVE_PATH = "./model.pt"
-    DET_THRESHOLD = 0
+    DET_THRESHOLD = 0.5
     RANDOM_SEED = 42

@@ -27,9 +27,11 @@ class Predictor:
         intrins = torch.tensor(intrins).to(self.config.DEVICE)
         heatmap,regression,seg_res = self.model(x,rots,trans,intrins)
         det_res = self.post_process(heatmap,regression,self.config.DET_THRESHOLD)
+        print(det_res.shape)
         return det_res,seg_res
 
     def post_process(self,heatmap,regression,threshold):
+        heatmap.sigmoid_()
         heatmap = self.nms(heatmap)
         heatmap_values,heatmap_indices = torch.max(heatmap,dim=1)
         xyc = self.xyc.repeat(heatmap.shape[0],1,1,1)
@@ -56,12 +58,9 @@ if __name__ == '__main__':
     image_list = [Image.open("./image/{}.jpg".format(channel)).resize(config.INPUT_IMAGE_SIZE[::-1]) for channel in channels]
     x = np.stack(image_list)
     x = x.astype(np.float32)
-    print(x.mean())
     x /= 255.0
     x /= np.array(config.MEAN)
     x -= np.array(config.STD)
-    print(x.mean())
-    print(x.std())
     x = x.transpose(0,3,1,2)
     x = np.expand_dims(x,0)
     rots = np.array([[[[ 5.6847786e-03, -5.6366678e-03,  9.9996793e-01],
@@ -118,4 +117,4 @@ if __name__ == '__main__':
                         [[509.03915,   0.,      330.6462 ],
                         [  0.,      904.95856, 341.15674],
                         [  0.,        0.,        1.     ]]]],dtype=np.float32)
-    predictor.predict(x,rots,trans,intrins)
+    print(predictor.predict(x,rots,trans,intrins))
