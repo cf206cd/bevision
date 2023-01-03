@@ -1,4 +1,3 @@
-import torch
 from torch.utils.data import DataLoader
 from torchvision.datasets import VisionDataset
 from nuscenes.nuscenes import NuScenes
@@ -71,18 +70,18 @@ class NuScenesDataset(VisionDataset):
     def generate_targets(self,ego_pose,instances,map_token,tau=2):
         ego_pose_translation = np.array(ego_pose['translation'],dtype=np.float32)
         ego_pose_rotation = to_rotation_matrix(ego_pose['rotation'])
-        det_resolution,det_start_position,det_dimension = generate_grid([self.config.GRID_CONFIG['det']['xbound'],
+        det_lower_bound,det_interval,det_count = generate_grid([self.config.GRID_CONFIG['det']['xbound'],
                                                         self.config.GRID_CONFIG['det']['ybound']])
-        seg_resolution,seg_start_position,seg_dimension = generate_grid([self.config.GRID_CONFIG['seg']['xbound'],
+        seg_lower_bound,seg_interval,seg_count = generate_grid([self.config.GRID_CONFIG['seg']['xbound'],
                                                         self.config.GRID_CONFIG['seg']['ybound']])
-        heatmap_gt = np.zeros((len(self.catogories),*det_dimension[:2].astype(int)))
-        regression_gt = np.zeros((5,*det_dimension[:2].astype(int)))
-        segment_gt = np.zeros((self.config.NUM_SEG_CLASSES,*seg_dimension[:2].astype(int)))
+        heatmap_gt = np.zeros((len(self.catogories),*det_count[:2].astype(int)))
+        regression_gt = np.zeros((5,*det_count[:2].astype(int)))
+        segment_gt = np.zeros((self.config.NUM_SEG_CLASSES,*seg_count[:2].astype(int)))
         for instance in instances:
-            det_size = (instance['size'][:2]/ det_resolution)
+            det_size = (instance['size'][:2]/ det_interval)
             radius = max(tau,int(self.gaussian_radius(det_size)))
             center = np.linalg.inv(ego_pose_rotation).dot(np.array(instance['translation'],dtype=np.float32)-ego_pose_translation)
-            center_loc = det_dimension[:2]-((center[:2] - (det_start_position - det_resolution*0.5)) / det_resolution)[::-1]
+            center_loc = det_count[:2]-((center[:2] - det_lower_bound) / det_interval+0.5)[::-1]
             category = instance['category']
             rotation_matrix = np.linalg.inv(ego_pose_rotation).dot(to_rotation_matrix(instance['rotation']))
             rotation = quaternion.from_rotation_matrix(rotation_matrix)

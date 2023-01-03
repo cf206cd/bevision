@@ -25,7 +25,7 @@ class Config:
     INPUT_IMAGE_SIZE = (640,640) #height,width
 
     DEVICE = "cuda:0"
-    EPOCH = 1
+    EPOCH = 10
     
     BATCH_SIZE = 1
     LEARNING_RATE = 1e-3

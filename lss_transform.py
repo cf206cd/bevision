@@ -2,18 +2,18 @@ import torch
 import torch.nn as nn
 from utils import generate_grid
 class LSSTransform(nn.Module):
-    def __init__(self, grid_conf=None, image_size=None, #image_size: origin image size, H x W
+    def __init__(self, grid_conf=None, image_size=None, #image_size: origin image count, H x W
                 numC_input=512,numC_trans=512, 
                 downsample=16, use_quickcumsum=True):
 
         super().__init__()
         self.grid_conf = grid_conf
-        dx, bx, nx = [torch.tensor(x) for x in generate_grid([self.grid_conf['xbound'],
+        lower_bound, interval, count = [torch.tensor(x) for x in generate_grid([self.grid_conf['xbound'],
                                               self.grid_conf['ybound'],
                                               self.grid_conf['zbound']])]
-        self.dx = nn.Parameter(dx, requires_grad=False)
-        self.bx = nn.Parameter(bx, requires_grad=False)
-        self.nx = nn.Parameter(nx, requires_grad=False)
+        self.interval = nn.Parameter(interval, requires_grad=False)
+        self.lower_bound = nn.Parameter(lower_bound, requires_grad=False)
+        self.count = nn.Parameter(count, requires_grad=False)
         self.image_size = image_size
         self.downsample = downsample
 
@@ -65,10 +65,10 @@ class LSSTransform(nn.Module):
         # flatten (batch & sequence)
         rots = rots.flatten(0, 1).to(points.device)
         trans = trans.flatten(0, 1).to(points.device)
-        intrins = torch.inverse(intrins).flatten(0, 1).float().to(points.device)
+        intrins = intrins.flatten(0, 1).float().to(points.device)
         # 将像素坐标d[u,v,1]^T转换到车体坐标系下的[x,y,z]^T
         # d[u,v,1]^T=intrins*rots^(-1)*([x,y,z]^T-trans)，这里需要倒过来
-        combine = rots.matmul(intrins)
+        combine = rots.matmul(torch.inverse(intrins))
         points = combine.reshape(-1, N, 1, 1, 1, 3, 3).matmul(points).squeeze(-1)
         points = trans.reshape(-1, N, 1, 1, 1, 3)+points
         return points
@@ -94,12 +94,12 @@ class LSSTransform(nn.Module):
 
     def voxel_pooling_prepare(self, geom):
         # flatten indices
-        bx = self.bx.type_as(geom)
-        dx = self.dx.type_as(geom)
-        nx = self.nx.type_as(geom).long()
+        lower_bound = self.lower_bound.type_as(geom)
+        interval = self.interval.type_as(geom)
+        count = self.count.type_as(geom).long()
 
         # 将[m,n]的范围转换到[0,n-m]，计算栅格坐标并取整
-        geom_grid = ((geom - (bx - dx / 2.)) / dx).long()  
+        geom_grid = ((geom - (lower_bound - interval * 0.5)) / interval).long()  
         B = geom_grid.shape[0]
 
         # 将像素映射关系同样展平，一共有(B*N*D*H*W)个点 
@@ -111,17 +111,17 @@ class LSSTransform(nn.Module):
 
         # filter out points that are outside box
         # 过滤掉在边界线之外的点
-        kept = (geom_grid[:, 0] >= 0) & (geom_grid[:, 0] < nx[0]) \
-            & (geom_grid[:, 1] >= 0) & (geom_grid[:, 1] < nx[1]) \
-            & (geom_grid[:, 2] >= 0) & (geom_grid[:, 2] < nx[2])
+        kept = (geom_grid[:, 0] >= 0) & (geom_grid[:, 0] < count[0]) \
+            & (geom_grid[:, 1] >= 0) & (geom_grid[:, 1] < count[1]) \
+            & (geom_grid[:, 2] >= 0) & (geom_grid[:, 2] < count[2])
 
-        # [nx, ny, nz, n_batch]
+        # [count, ny, nz, n_batch]
         geom_grid = geom_grid[kept]
 
         # get tensors from the same voxel next to each other
         # 给每一个点一个rank值，同一个batch且同一个格子里面的点rank值相等
-        ranks = geom_grid[:, 0] * (nx[1] * nx[2] * B) \
-            + geom_grid[:, 1] * (nx[2] * B) \
+        ranks = geom_grid[:, 0] * (count[1] * count[2] * B) \
+            + geom_grid[:, 1] * (count[2] * B) \
             + geom_grid[:, 2] * B \
             + geom_grid[:, 3]
         sorts = ranks.argsort()
@@ -149,8 +149,8 @@ class LSSTransform(nn.Module):
 
         # griddify (B x C x Z x X x Y)
         # 将x按照栅格坐标放到final中
-        nx = self.nx.long()
-        final = torch.zeros((B, C, nx[2], nx[0], nx[1]), device=x.device)
+        count = self.count.long()
+        final = torch.zeros((B, C, count[2], count[0], count[1]), device=x.device)
 
         final[geom[:, 3], :, geom[:, 2],
               geom[:, 0], geom[:, 1]] = x
@@ -200,8 +200,8 @@ class LSSTransformWithFixedParam(LSSTransform):
 
         # griddify (B x C x Z x X x Y)
         # 将x按照栅格坐标放到final中
-        nx = self.nx.long()
-        bev_feat = torch.zeros((B, C, nx[2], nx[0], nx[1]), device=x.device)
+        count = self.count.long()
+        bev_feat = torch.zeros((B, C, count[2], count[0], count[1]), device=x.device)
 
         bev_feat[geom[:, 3], :, geom[:, 2],
               geom[:, 0], geom[:, 1]] = x

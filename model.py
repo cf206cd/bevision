@@ -11,6 +11,7 @@ class BEVerse(nn.Module):
     def __init__(self,grid_confs,num_det_classes=10,num_seg_classes=10,num_images=6,image_size=(640,640)):
         super().__init__()
         self.image_encoder = regnetx_002()
+        self.image_encoder.load_state_dict(torch.load("./weights/RegNetX-200M-5e5535e1.pth"), strict=False)
         self.image_fpn = FPN(in_channels=[56,152,368],out_channels=64)
         self.grid_conf = grid_confs['base']
         self.image_size = image_size

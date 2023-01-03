@@ -12,12 +12,12 @@ class Predictor:
         self.model = BEVerse(config.GRID_CONFIG,num_det_classes=config.NUM_DET_CLASSES,num_seg_classes=config.NUM_SEG_CLASSES,image_size=config.INPUT_IMAGE_SIZE).to(torch.device(config.DEVICE),)
         self.model.load_state_dict(torch.load(config.MODEL_SAVE_PATH,map_location=config.DEVICE))
         self.model.to(self.config.DEVICE).eval()
-        dx, bx, nx = [torch.tensor(res) for res in generate_grid(
+        lower_bound, interval, _ = [torch.tensor(res) for res in generate_grid(
                 [config.GRID_CONFIG['det']['xbound'], config.GRID_CONFIG['det']['ybound']])]
         xc = torch.arange(
-                bx[0], config.GRID_CONFIG['det']['xbound'][1], dx[0]).to(self.config.DEVICE)
+                lower_bound[0], config.GRID_CONFIG['det']['xbound'][1], interval[0]).to(self.config.DEVICE)
         yc = torch.arange(
-                bx[1], config.GRID_CONFIG['det']['ybound'][1], dx[1]).to(self.config.DEVICE)
+                lower_bound[1], config.GRID_CONFIG['det']['ybound'][1], interval[1]).to(self.config.DEVICE)
         self.xyc = torch.stack(torch.meshgrid(xc, yc, indexing='ij'), dim=2)
 
     def predict(self,x,rots,trans,intrins):

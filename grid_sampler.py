@@ -6,13 +6,13 @@ from utils import generate_grid
 class GridSampler(nn.Module):
     def __init__(self,input_grid_conf,target_grid_conf):
         super().__init__()
-        target_resolution, target_start_position, target_dimension = [torch.tensor(x) for x in generate_grid(
+        target_lower_bound, target_interval, _ = [torch.tensor(x) for x in generate_grid(
                 [target_grid_conf['xbound'], target_grid_conf['ybound']])]
 
         self.mesh_x = torch.arange(
-                target_start_position[0], target_grid_conf['xbound'][1], target_resolution[0])
+                target_lower_bound[0], target_grid_conf['xbound'][1], target_interval[0])
         self.mesh_y = torch.arange(
-                target_start_position[1], target_grid_conf['ybound'][1], target_resolution[1])
+                target_lower_bound[1], target_grid_conf['ybound'][1], target_interval[1])
 
         #convert to normalized coords
         self.norm_mesh_x = (self.mesh_x-input_grid_conf['xbound'][0]) / (input_grid_conf['xbound'][1]-input_grid_conf['xbound'][0])*2-1
