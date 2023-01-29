@@ -25,7 +25,7 @@ class BEVerse(nn.Module):
         self.num_images = num_images
 
     def forward(self, x, rots, trans, intrins):
-        x = x.reshape(-1,x.shape[2],x.shape[3],x.shape[4])
+        x = torch.cat(x.unbind(dim=1), 0)
         image_feature = self.image_encoder(x)
         image_fpn_feature = self.image_fpn(image_feature)[0]
         image_fpn_feature = image_fpn_feature.reshape(-1,self.num_images,image_fpn_feature.shape[1],image_fpn_feature.shape[2],image_fpn_feature.shape[3])
@@ -47,7 +47,7 @@ class BEVerseWithFixedParam(BEVerse):
         self.lss_transformer = LSSTransformWithFixedParam(rots,trans,intrins,image_size=self.image_size,numC_input=64,numC_trans=64,downsample=8,grid_conf=self.grid_conf,intrins_is_inverse=True)
     
     def forward(self, x):
-        x = x.reshape(x.shape[0]*x.shape[1],x.shape[2],x.shape[3],x.shape[4])
+        x = torch.cat(x.unbind(dim=1), 0)
         image_feature = self.image_encoder(x)
         image_fpn_feature = self.image_fpn(image_feature)[0]
         image_fpn_feature = image_fpn_feature.reshape(-1,self.num_images,image_fpn_feature.shape[1],image_fpn_feature.shape[2],image_fpn_feature.shape[3])

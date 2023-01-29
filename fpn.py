@@ -37,8 +37,7 @@ class FPN(nn.Module):
         ]
         for i in range(len(laterals)-1,0,-1):
             prev_shape = laterals[i-1].shape[2:]
-            laterals[i-1] = F.interpolate(laterals[i], size=prev_shape, mode="nearest")+laterals[i-1]
-            #laterals[i-1] = F.interpolate(laterals[i], scale_factor=2.0, mode="nearest")+laterals[i-1]
+            laterals[i-1] = F.interpolate(laterals[i], size=prev_shape, mode="bilinear")+laterals[i-1]
         outs = [
             fpn_conv(laterals[self.out_ids[i]])
             for i,fpn_conv in enumerate(self.fpn_convs)]        
