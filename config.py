@@ -1,4 +1,8 @@
 class Config:
+    DATASET_VERSION='v1.0-mini'
+    DATASET_DATAROOT='D:/dataset/nuscenes'
+    DATASET_VERBOSE=True
+    DATASET_MAP_RESOLUTION=0.1
     '''x:forward, y:left, z:up'''
     GRID_CONFIG = {
     #for 3D grid:x forward,y left,z up
@@ -24,7 +28,7 @@ class Config:
 
     INPUT_IMAGE_SIZE = (640,640) #height,width
 
-    DEVICE = "cpu"
+    DEVICE = "cuda:0"
     EPOCH = 10
     
     BATCH_SIZE = 1

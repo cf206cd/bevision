@@ -8,10 +8,10 @@ from config import Config
 import quaternion
 from utils import generate_grid,to_rotation_matrix,to_euler_angles
 class NuScenesDataset(VisionDataset):
-    def __init__(self,version='v1.0-mini', dataroot='D:/dataset/nuscenes', verbose=True, map_resolution=0.1,config=Config):
-        super().__init__(dataroot)
+    def __init__(self,config=Config):
+        super().__init__(dataroot=config.DATASET_DATAROOT)
         self.config = config
-        self.nusc = NuScenes(version=version, dataroot=dataroot, verbose=verbose, map_resolution=map_resolution)
+        self.nusc = NuScenes(version=config.DATASET_VERSION, dataroot=config.DATASET_DATAROOT, verbose=config.DATASET_VERBOSE, map_resolution=config.DATASET_MAP_RESOLUTION)
         self.samples = self.nusc.sample
         self.samples_data = self.nusc.sample_data
         self.transform_image = torchvision.transforms.Compose((
