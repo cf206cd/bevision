@@ -57,6 +57,7 @@ class HeatmapFocalLoss(nn.Module):
                 loss = -neg_loss.sum()
         elif self.reduction == "sum":
             loss = loss.sum()
+            
         return loss
 
 class SmoothL1Loss(torch.nn.SmoothL1Loss):

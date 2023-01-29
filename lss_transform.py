@@ -3,8 +3,8 @@ import torch.nn as nn
 from utils import generate_grid
 class LSSTransform(nn.Module):
     def __init__(self, grid_conf=None, image_size=None, #image_size: origin image count, H x W
-                numC_input=512,numC_trans=512, 
-                downsample=16, use_quickcumsum=True):
+                numC_input=512, numC_trans=512, downsample=16, 
+                intrins_is_inverse=False):
 
         super().__init__()
         self.grid_conf = grid_conf
@@ -23,7 +23,8 @@ class LSSTransform(nn.Module):
         self.numC_trans = numC_trans
         self.depthnet = nn.Conv2d(
             self.numC_input, self.D + self.numC_trans, kernel_size=1, padding=0)
-        self.use_quickcumsum = use_quickcumsum
+
+        self.intrins_is_inverse = intrins_is_inverse
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -57,24 +58,30 @@ class LSSTransform(nn.Module):
         N = trans.shape[1]
 
         points = self.frustum.unsqueeze(0).unsqueeze(0).unsqueeze(-1)
-        # cam_to_ego
+
+        #将像素坐标(u,v,1)根据深度d变成齐次坐标(du,dv,d)
         points = torch.cat((points[:, :, :, :, :, :2] * points[:, :, :, :, :, 2:3],
                             points[:, :, :, :, :, 2:3]
-                            ), 5) # 将像素坐标(u,v,1)根据深度d变成齐次坐标(du,dv,d)
+                            ), 5)
 
         # flatten (batch & sequence)
         rots = rots.flatten(0, 1).to(points.device)
         trans = trans.flatten(0, 1).to(points.device)
-        intrins = intrins.flatten(0, 1).float().to(points.device)
-        # 将像素坐标d[u,v,1]^T转换到车体坐标系下的[x,y,z]^T
-        # d[u,v,1]^T=intrins*rots^(-1)*([x,y,z]^T-trans)，这里需要倒过来
-        combine = rots.matmul(torch.inverse(intrins))
+        intrins = intrins.flatten(0, 1).to(points.device)
+
+        # 将像素坐标d[u,v,1]^T转换到车体坐标系下的[x,y,z]^T,d[u,v,1]^T=intrins*rots^(-1)*([x,y,z]^T-trans)，这里需要倒过来
+        if self.intrins_is_inverse == False:
+            intrins_inverse = torch.inverse(intrins.float())
+        else:
+            intrins_inverse = intrins
+        combine = rots.matmul(intrins_inverse)
         points = combine.reshape(-1, N, 1, 1, 1, 3, 3).matmul(points).squeeze(-1)
         points = trans.reshape(-1, N, 1, 1, 1, 3)+points
         return points
 
     def get_volume(self,x):
         B, N, C, H, W = x.shape
+
         # flatten (batch, num_cam)
         x = x.reshape(B * N, C, H, W)
         x = self.depthnet(x)
@@ -140,26 +147,23 @@ class LSSTransform(nn.Module):
         geom = geom.to(x.device)
         ranks = ranks.to(x.device)
 
-        # 一个batch的一个格子里只留一个点
-        if self.use_quickcumsum:
-            x, geom = QuickCumsum.apply(x, geom, ranks)
-        else:
-            # cumsum trick
-            x, geom = cumsum_trick(x, geom, ranks)
+        # cumsum trick
+        x, geom = cumsum_trick(x, geom, ranks)
 
-        # griddify (B x C x Z x X x Y)
+        # griddify as (B x Z x X x Y x C) not (B x C x Z x X x Y) for onnx export, see https://pytorch.org/docs/stable/onnx.html#unsupported-tensor-indexing-patterns
         # 将x按照栅格坐标放到final中
         count = self.count.long()
-        final = torch.zeros((B, C, count[2], count[0], count[1]), device=x.device)
+        bev_feat = torch.zeros(B, count[2], count[0], count[1], C, device=x.device)
 
-        final[geom[:, 3], :, geom[:, 2],
+        bev_feat[geom[:, 3], geom[:, 2],
               geom[:, 0], geom[:, 1]] = x
 
+        # permute back to (B x C x Z x X x Y)
+        bev_feat = bev_feat.permute(0,4,1,2,3)
         # collapse Z
         # 消除掉z维
-        final = torch.cat(final.unbind(dim=2), 1)
-
-        return final
+        bev_feat = torch.cat(bev_feat.unbind(dim=2), 1)
+        return bev_feat
 
     def forward(self, x, rots, trans, intrins):
         # 每个像素对应的视锥体的车体坐标[B, N, D, H, W, 3]
@@ -192,20 +196,18 @@ class LSSTransformWithFixedParam(LSSTransform):
         ranks = self.ranks.to(x.device)
 
         # 一个batch的一个格子里只留一个点
-        if self.use_quickcumsum:
-            x, geom = QuickCumsum.apply(x, geom, ranks)
-        else:
-            # cumsum trick
-            x, geom = cumsum_trick(x, geom, ranks)
+        x, geom = cumsum_trick(x, geom, ranks)
 
-        # griddify (B x C x Z x X x Y)
+        # griddify as (B x Z x X x Y x C) not (B x C x Z x X x Y) for onnx export, see https://pytorch.org/docs/stable/onnx.html#unsupported-tensor-indexing-patterns
         # 将x按照栅格坐标放到final中
         count = self.count.long()
-        bev_feat = torch.zeros((B, C, count[2], count[0], count[1]), device=x.device)
+        bev_feat = torch.zeros(B, count[2], count[0], count[1], C, device=x.device)
 
-        bev_feat[geom[:, 3], :, geom[:, 2],
+        bev_feat[geom[:, 3], geom[:, 2],
               geom[:, 0], geom[:, 1]] = x
 
+        # permute back to (B x C x Z x X x Y)
+        bev_feat = bev_feat.permute(0,4,1,2,3)
         # collapse Z
         # 消除掉z维
         bev_feat = torch.cat(bev_feat.unbind(dim=2), 1)
@@ -221,58 +223,27 @@ def cumsum_trick(x, geom, ranks):
 
     return x, geom
 
-class QuickCumsum(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x, geom, ranks):
-        """The features `x` and `geometry` are ranked by voxel positions."""
-        # Cumulative sum of all features.
-        x = x.cumsum(0)
-
-        # Indicates the change of voxel.
-        kept = torch.ones(x.shape[0], device=x.device, dtype=torch.bool)
-        kept[:-1] = (ranks[1:] != ranks[:-1])
-
-        x, geom = x[kept], geom[kept]
-        # Calculate sum of features within a voxel.
-        x = torch.cat((x[:1], x[1:] - x[:-1]))
-
-        # save kept for backward
-        ctx.save_for_backward(kept)
-
-        # no gradient for geom
-        ctx.mark_non_differentiable(geom)
-
-        return x, geom 
-
-    @staticmethod
-    def backward(ctx, gradx, gradgeom):
-        kept, = ctx.saved_tensors
-        back = torch.cumsum(kept, 0)
-
-        # Since the operation is summing, we simply need to send gradient
-        # to all elements that were part of the summation process.
-        back[kept] -= 1
-        val = gradx[back]
-
-        return val, None, None
-
 if __name__ == "__main__":
     grid_conf = {
         'xbound': [-10.0, 50.0, 0.125],
         'ybound': [-15.0, 15.0, 0.125],
         'zbound': [-10.0, 10.0, 20.0],
         'dbound': [1.0, 60.0, 1.0],}
-    input = torch.zeros(2,6,64,80,80)
-    rots = torch.zeros(2,6,3,3)
-    trans = torch.zeros(2,6,3)
+    x = torch.randn(2,6,64,80,80)
+    rots = torch.randn(2,6,3,3)
+    trans = torch.randn(2,6,3)
     intrins = torch.zeros(2,6,3,3)
     for i in range(3):
         rots[:,:,i,i] = 1
         intrins[:,:,i,i] = 1
     net1 = LSSTransform(grid_conf=grid_conf,image_size=(640,640),numC_input=64,numC_trans=64,downsample=8)
-    output1 = net1(input,rots,trans,intrins)
+    output1 = net1(x,rots,trans,intrins)
     print(output1.shape)
+    jit_model1 = torch.jit.script(net1,[x,rots,trans,intrins])
+    print(jit_model1)
+
     net2 = LSSTransformWithFixedParam(rots,trans,intrins,grid_conf=grid_conf,image_size=(640,640),numC_input=64,numC_trans=64,downsample=8)
-    output2 = net2(input)
+    output2 = net2(x)
     print(output2.shape)
-   
+    jit_model2 = torch.jit.script(net2,x)
+    print(jit_model2)

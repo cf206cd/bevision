@@ -11,14 +11,13 @@ class BEVerse(nn.Module):
     def __init__(self,grid_confs,num_det_classes=10,num_seg_classes=10,num_images=6,image_size=(640,640)):
         super().__init__()
         self.image_encoder = regnetx_002()
-        self.image_encoder.load_state_dict(torch.load("./weights/RegNetX-200M-5e5535e1.pth"), strict=False)
         self.image_fpn = FPN(in_channels=[56,152,368],out_channels=64)
         self.grid_conf = grid_confs['base']
         self.image_size = image_size
         self.lss_transformer = LSSTransform(grid_conf=self.grid_conf,image_size=self.image_size,numC_input=64,numC_trans=64,downsample=8)
         self.bev_encoder = regnetx_002(input_channel=64,out_indices=[2,3],replace_stride_with_dilation=[True,True,True,False])
         self.bev_fpn = FPN(in_channels=[152,368],out_channels=64,out_ids=[0])
-        self.grid_samplers = {}
+        self.grid_samplers = nn.ModuleDict()
         for task,conf in grid_confs.items():
             self.grid_samplers[task] = GridSampler(self.grid_conf,conf)
         self.det_head = CenterPointHead(64,num_det_classes)
@@ -26,10 +25,10 @@ class BEVerse(nn.Module):
         self.num_images = num_images
 
     def forward(self, x, rots, trans, intrins):
-        x = x.reshape(-1,*x.shape[2:])
+        x = x.reshape(-1,x.shape[2],x.shape[3],x.shape[4])
         image_feature = self.image_encoder(x)
         image_fpn_feature = self.image_fpn(image_feature)[0]
-        image_fpn_feature = image_fpn_feature.reshape(-1,self.num_images,*image_fpn_feature.shape[1:])
+        image_fpn_feature = image_fpn_feature.reshape(-1,self.num_images,image_fpn_feature.shape[1],image_fpn_feature.shape[2],image_fpn_feature.shape[3])
         lss_feature = self.lss_transformer(image_fpn_feature,rots,trans,intrins)
         bev_feature = self.bev_encoder(lss_feature)
         bev_fpn_feature = self.bev_fpn(bev_feature)[0]
@@ -45,13 +44,13 @@ class BEVerse(nn.Module):
 class BEVerseWithFixedParam(BEVerse):
     def __init__(self,rots,trans,intrins,**kwargs):
         super().__init__(**kwargs)
-        self.lss_transformer = LSSTransformWithFixedParam(rots,trans,intrins,image_size=self.image_size,numC_input=64,numC_trans=64,downsample=8,grid_conf=self.grid_conf)
+        self.lss_transformer = LSSTransformWithFixedParam(rots,trans,intrins,image_size=self.image_size,numC_input=64,numC_trans=64,downsample=8,grid_conf=self.grid_conf,intrins_is_inverse=True)
     
     def forward(self, x):
-        x = x.reshape(-1,*x.shape[2:])
+        x = x.reshape(x.shape[0]*x.shape[1],x.shape[2],x.shape[3],x.shape[4])
         image_feature = self.image_encoder(x)
         image_fpn_feature = self.image_fpn(image_feature)[0]
-        image_fpn_feature = image_fpn_feature.reshape(-1,self.num_images,*image_fpn_feature.shape[1:])
+        image_fpn_feature = image_fpn_feature.reshape(-1,self.num_images,image_fpn_feature.shape[1],image_fpn_feature.shape[2],image_fpn_feature.shape[3])
         lss_feature = self.lss_transformer(image_fpn_feature)
         bev_feature = self.bev_encoder(lss_feature)
         bev_fpn_feature = self.bev_fpn(bev_feature)[0]

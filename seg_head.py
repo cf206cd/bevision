@@ -14,3 +14,5 @@ if __name__ == "__main__":
     net = VanillaSegmentHead(64,10)
     res = net(x)
     print(res.shape)
+    jit_model = torch.jit.script(net,x)
+    print(jit_model)

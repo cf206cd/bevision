@@ -26,3 +26,6 @@ if __name__ == "__main__":
     net = CenterPointHead(64,10)
     res = net(x)
     print(res[0].shape,res[1].shape)
+    jit_model = torch.jit.script(net,x)
+    print(jit_model)
+    

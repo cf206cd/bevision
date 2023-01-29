@@ -11,7 +11,7 @@ class Trainer:
     def __init__(self,config):
         self.config = config
         self.setup_seed(config.RANDOM_SEED)
-        self.model = BEVerse(config.GRID_CONFIG,num_det_classes=config.NUM_DET_CLASSES,num_seg_classes=config.NUM_SEG_CLASSES,image_size=config.INPUT_IMAGE_SIZE).to(torch.device(config.DEVICE),)
+        self.model = BEVerse(config.GRID_CONFIG,num_det_classes=config.NUM_DET_CLASSES,num_seg_classes=config.NUM_SEG_CLASSES,image_size=config.INPUT_IMAGE_SIZE).to(torch.device(config.DEVICE))
         self.epoch = config.EPOCH
         self.dataset = NuScenesDataset()
         self.dataloader = DataLoader(self.dataset,batch_size=config.BATCH_SIZE)

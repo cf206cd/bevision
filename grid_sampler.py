@@ -44,9 +44,10 @@ if __name__ == "__main__":
         'ybound': [-15.0, 15.0, 0.25],
     }
     }
-    input = torch.zeros(2,64,120,60)
-    res={}
+    x = torch.zeros(2,64,120,60)
     for name,conf in task_grids.items():
         net = GridSampler(base_grid,conf)
-        res[name] = net(input)
-    print([i.shape for i in res.values()])
+        res = net(x)
+        jit_model = torch.jit.script(net,x)
+        print(res.shape)
+        print(jit_model)
