@@ -162,7 +162,7 @@ class LSSTransform(nn.Module):
         bev_feat = bev_feat.permute(0,4,1,2,3)
         # collapse Z
         # 消除掉z维
-        bev_feat = torch.cat(bev_feat.unbind(dim=2), 1)
+        bev_feat = bev_feat.reshape(bev_feat.shape[0],-1,bev_feat.shape[3],bev_feat.shape[4])
         return bev_feat
 
     def forward(self, x, rots, trans, intrins):
@@ -210,7 +210,7 @@ class LSSTransformWithFixedParam(LSSTransform):
         bev_feat = bev_feat.permute(0,4,1,2,3)
         # collapse Z
         # 消除掉z维
-        bev_feat = torch.cat(bev_feat.unbind(dim=2), 1)
+        bev_feat = bev_feat.reshape(bev_feat.shape[0],-1,bev_feat.shape[3],bev_feat.shape[4])
         return bev_feat
 
 def cumsum_trick(x, geom, ranks):
