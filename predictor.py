@@ -1,5 +1,5 @@
 import torch
-from model import BEVerse
+from model import BEVision
 import torch.nn as nn
 from config import Config
 import numpy as np
@@ -9,15 +9,11 @@ from utils import generate_grid
 class Predictor:
     def __init__(self,config):
         self.config = config
-        self.model = BEVerse(config.GRID_CONFIG,num_det_classes=config.NUM_DET_CLASSES,num_seg_classes=config.NUM_SEG_CLASSES,image_size=config.INPUT_IMAGE_SIZE).to(torch.device(config.DEVICE),)
+        self.model = BEVision(config.GRID_CONFIG,num_det_classes=config.NUM_DET_CLASSES,num_seg_classes=config.NUM_SEG_CLASSES,image_size=config.INPUT_IMAGE_SIZE).to(torch.device(config.DEVICE),)
         self.model.load_state_dict(torch.load(config.MODEL_SAVE_PATH,map_location=config.DEVICE))
         self.model.to(self.config.DEVICE).eval()
-        lower_bound, interval, _ = [torch.tensor(res) for res in generate_grid(
-                [config.GRID_CONFIG['det']['xbound'], config.GRID_CONFIG['det']['ybound']])]
-        xc = torch.arange(
-                lower_bound[0], config.GRID_CONFIG['det']['xbound'][1], interval[0]).to(self.config.DEVICE)
-        yc = torch.arange(
-                lower_bound[1], config.GRID_CONFIG['det']['ybound'][1], interval[1]).to(self.config.DEVICE)
+        xc = torch.tensor(generate_grid(config.GRID_CONFIG['det']['xbound']),device=self.config.DEVICE)
+        yc = torch.tensor(generate_grid(config.GRID_CONFIG['det']['ybound']),device=self.config.DEVICE)
         self.xyc = torch.stack(torch.meshgrid(xc, yc, indexing='ij'), dim=2)
 
     def predict(self,x,rots,trans,intrins):
@@ -27,7 +23,6 @@ class Predictor:
         intrins = torch.tensor(intrins).to(self.config.DEVICE)
         heatmap,regression,seg_res = self.model(x,rots,trans,intrins)
         det_res = self.post_process(heatmap,regression,self.config.DET_THRESHOLD)
-        print(det_res.shape)
         return det_res,seg_res
 
     def post_process(self,heatmap,regression,threshold):

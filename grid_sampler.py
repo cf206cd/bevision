@@ -1,18 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils import generate_grid
+from utils import generate_grid,generate_step
 
 class GridSampler(nn.Module):
     def __init__(self,input_grid_conf,target_grid_conf):
         super().__init__()
-        target_lower_bound, target_interval, _ = [torch.tensor(x) for x in generate_grid(
-                [target_grid_conf['xbound'], target_grid_conf['ybound']])]
 
-        self.mesh_x = torch.arange(
-                target_lower_bound[0], target_grid_conf['xbound'][1], target_interval[0])
-        self.mesh_y = torch.arange(
-                target_lower_bound[1], target_grid_conf['ybound'][1], target_interval[1])
+        self.mesh_x = generate_grid(target_grid_conf['xbound'])
+        self.mesh_y = generate_grid(target_grid_conf['ybound'])
 
         #convert to normalized coords
         self.norm_mesh_x = (self.mesh_x-input_grid_conf['xbound'][0]) / (input_grid_conf['xbound'][1]-input_grid_conf['xbound'][0])*2-1

@@ -1,21 +1,15 @@
 import numpy as np
-import quaternion
 import torch.nn as nn
 
-def generate_grid(bound):
-    lower_bound = np.array(
-        [row[0] + row[2]*0.5 for row in bound]) #分别为每个方向上第一个格子中心的坐标
-    interval = np.array([row[2] for row in bound]) #分别为每个方向上的网格间距
-    count = np.array([(row[1] - row[0]) / row[2]
-                      for row in bound]) #分别为每个方向上格子的数量
+def generate_grid(row):
+    grid = np.linspace(*row,endpoint=False)+(row[1]-row[0])/row[2]*0.5
+    return grid
 
-    return lower_bound, interval, count
-
-def to_rotation_matrix(rotation):
-    return quaternion.as_rotation_matrix(quaternion.from_float_array(rotation)).astype(np.float32)
-
-def to_euler_angles(rotation):
-    return quaternion.as_euler_angles(quaternion.from_float_array(rotation)).astype(np.float32)
+def generate_step(rows):
+    start = np.array([row[0] for row in rows])
+    interval = np.array([(row[1]-row[0])/row[2] for row in rows])
+    count = np.array([row[2] for row in rows])
+    return start,interval,count
 
 class SeparateHead(nn.Module):
     def __init__(

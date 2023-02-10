@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from utils import generate_grid
+from utils import generate_step
 class LSSTransform(nn.Module):
     def __init__(self, grid_conf=None, image_size=None, #image_size: origin image count, H x W
                 numC_input=512, numC_trans=512, downsample=16, 
@@ -8,12 +8,13 @@ class LSSTransform(nn.Module):
 
         super().__init__()
         self.grid_conf = grid_conf
-        lower_bound, interval, count = [torch.tensor(x) for x in generate_grid([self.grid_conf['xbound'],
+        start,interval,count = generate_step([self.grid_conf['xbound'],
                                               self.grid_conf['ybound'],
-                                              self.grid_conf['zbound']])]
-        self.interval = nn.Parameter(interval, requires_grad=False)
-        self.lower_bound = nn.Parameter(lower_bound, requires_grad=False)
+                                              self.grid_conf['zbound']])
+        self.start = nn.Parameter(start, requires_grad=False)
         self.count = nn.Parameter(count, requires_grad=False)
+        self.interval = nn.Parameter(interval, requires_grad=False)
+        
         self.image_size = image_size
         self.downsample = downsample
 
@@ -101,12 +102,12 @@ class LSSTransform(nn.Module):
 
     def voxel_pooling_prepare(self, geom):
         # flatten indices
-        lower_bound = self.lower_bound.type_as(geom)
+        start = self.start.type_as(geom)
         interval = self.interval.type_as(geom)
         count = self.count.type_as(geom).long()
 
         # 将[m,n]的范围转换到[0,n-m]，计算栅格坐标并取整
-        geom_grid = ((geom - (lower_bound - interval * 0.5)) / interval).long()  
+        geom_grid = ((geom - start) / interval).long()  
         B = geom_grid.shape[0]
 
         # 将像素映射关系同样展平，一共有(B*N*D*H*W)个点 

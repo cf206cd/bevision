@@ -85,6 +85,3 @@ class Loss(nn.Module):
         segment_loss = self.segment_loss(segment,segment_gt)
         loss = heatmap_loss+self.gamma1*regression_loss+self.gamma2*segment_loss
         return loss
-
-
-

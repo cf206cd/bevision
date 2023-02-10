@@ -1,18 +1,24 @@
 from torch.utils.data import DataLoader
 from torchvision.datasets import VisionDataset
 from nuscenes.nuscenes import NuScenes
+from nuscenes.utils.splits import create_splits_scenes
+from nuscenes.utils.data_classes import Box
 import torchvision
 from PIL import Image
 import numpy as np
 from config import Config
-import quaternion
-from utils import generate_grid,to_rotation_matrix,to_euler_angles
+from pyquaternion import Quaternion
+from utils import generate_step
+import cv2
+
 class NuScenesDataset(VisionDataset):
     def __init__(self,config=Config):
-        super().__init__(dataroot=config.DATASET_DATAROOT)
+        super().__init__(root=config.DATASET_DATAROOT)
         self.config = config
         self.nusc = NuScenes(version=config.DATASET_VERSION, dataroot=config.DATASET_DATAROOT, verbose=config.DATASET_VERBOSE, map_resolution=config.DATASET_MAP_RESOLUTION)
-        self.samples = self.nusc.sample
+        self.scenes = create_splits_scenes()[config.DATASET_SPLIT]
+        self.samples = [sample for sample in self.nusc.sample if
+                   self.nusc.get('scene', sample['scene_token'])['name'] in self.scenes]
         self.samples_data = self.nusc.sample_data
         self.transform_image = torchvision.transforms.Compose((
                 torchvision.transforms.ToTensor(),
@@ -23,19 +29,7 @@ class NuScenesDataset(VisionDataset):
 
     def __getitem__(self, index):
         sample_record = self.samples[index]
-        data_list = []
-        ego_pose = self.nusc.get('ego_pose',self.nusc.get('sample_data', sample_record['data']['LIDAR_TOP'])['ego_pose_token'])
-        for sd_token in sample_record['data'].values():
-            sd_record = self.nusc.get('sample_data', sd_token)
-            if sd_record['sensor_modality'] == 'camera':
-                data = {}
-                data['width'] = sd_record['width']
-                data['height'] = sd_record['height']
-                data['translation'] = self.nusc.get('calibrated_sensor', sd_record['calibrated_sensor_token'])['translation']
-                data['rotation'] = self.nusc.get('calibrated_sensor', sd_record['calibrated_sensor_token'])['rotation']
-                data['camera_intrinsic'] = self.nusc.get('calibrated_sensor', sd_record['calibrated_sensor_token'])['camera_intrinsic']
-                data['raw'] = Image.open(self.nusc.get_sample_data_path(sd_token))
-                data_list.append(data)
+        
         instances = []
         for ann_token in sample_record['anns']:
             ann_record = self.nusc.get('sample_annotation', ann_token)
@@ -47,52 +41,80 @@ class NuScenesDataset(VisionDataset):
             instances.append(instance)
         scene = self.nusc.get('scene',sample_record['scene_token'])
         log = self.nusc.get('log',scene['log_token'])
-        map_token = log['map_token']
-        x,rots,trans,intrinsics = self.generate_inputs(data_list)
-        heatmap_gt,regression_gt,segment_gt = self.generate_targets(ego_pose,instances,map_token)
-        return x,rots,trans,intrinsics,heatmap_gt,regression_gt,segment_gt
+        images,rots,trans,intrinsics = self.generate_inputs(sample_record)
+        heatmap_gt,regression_gt,segment_gt = self.generate_targets(sample_record)
+        return images,rots,trans,intrinsics,heatmap_gt,regression_gt,segment_gt
 
     def __len__(self):
         return len(self.samples)
 
-    def generate_inputs(self,data):
-        x = np.stack([self.transform_image(i['raw']) for i in data])
-        rots = np.stack(to_rotation_matrix(i['rotation']) for i in data)
-        trans = np.stack(i['translation'] for i in data)
-        intrinsics =  np.stack([self.transform_intrinsic(np.array(i['camera_intrinsic'],dtype=np.float32),i['width'],i['height']) for i in data])
-        return x,rots,trans,intrinsics
+    def generate_inputs(self,sample_record):
+        widths=[]
+        heights=[]
+        translations=[]
+        rotations=[]
+        camera_intrinsics=[]
+        raws=[]
+        for sd_token in sample_record['data'].values():
+            sd_record = self.nusc.get('sample_data', sd_token)
+            if sd_record['sensor_modality'] == 'camera':
+                widths.append(sd_record['width'])
+                heights.append(sd_record['height'])
+                calibrated_sensor = self.nusc.get('calibrated_sensor', sd_record['calibrated_sensor_token'])
+                translations.append(calibrated_sensor['translation'])
+                rotations.append(calibrated_sensor['rotation'])
+                camera_intrinsics.append(calibrated_sensor['camera_intrinsic'])
+                raws.append(Image.open(self.nusc.get_sample_data_path(sd_token)))
+                tmp=cv2.imread(self.nusc.get_sample_data_path(sd_token))
+                tmp=cv2.resize(tmp,(250,250))
+                cv2.imshow(self.nusc.get_sample_data_path(sd_token),tmp)
+        images = np.stack([self.transform_image(raw) for raw in raws])
+        rots = np.stack(Quaternion(rotation).rotation_matrix for rotation in rotations)
+        trans = np.stack(translation for translation in translations)
+        intrinsics =  np.stack([self.transform_intrinsic(np.array(camera_intrinsic,dtype=np.float32),widths[i],heights[i]) for i,camera_intrinsic in enumerate(camera_intrinsics)])
+        return images,rots,trans,intrinsics
 
     def transform_intrinsic(self,intrinsic,width,height):
         intrinsic[0] *= self.config.INPUT_IMAGE_SIZE[1]/width
         intrinsic[1] *= self.config.INPUT_IMAGE_SIZE[0]/height
         return intrinsic
 
-    def generate_targets(self,ego_pose,instances,map_token,tau=2):
-        ego_pose_translation = np.array(ego_pose['translation'],dtype=np.float32)
-        ego_pose_rotation = to_rotation_matrix(ego_pose['rotation'])
-        det_lower_bound,det_interval,det_count = generate_grid([self.config.GRID_CONFIG['det']['xbound'],
+    def generate_targets(self,sample_record):
+        ego_pose = self.nusc.get('ego_pose',self.nusc.get('sample_data', sample_record['data']['LIDAR_TOP'])['ego_pose_token'])
+        tran = -np.array(ego_pose['translation'])
+        rot = Quaternion(ego_pose['rotation']).inverse
+        det_start,det_interval,det_count = generate_step([self.config.GRID_CONFIG['det']['xbound'],
                                                         self.config.GRID_CONFIG['det']['ybound']])
-        seg_lower_bound,seg_interval,seg_count = generate_grid([self.config.GRID_CONFIG['seg']['xbound'],
+        seg_start,seg_interval,seg_count = generate_step([self.config.GRID_CONFIG['seg']['xbound'],
                                                         self.config.GRID_CONFIG['seg']['ybound']])
         heatmap_gt = np.zeros((len(self.catogories),*det_count[:2].astype(int)))
         regression_gt = np.zeros((5,*det_count[:2].astype(int)))
-        segment_gt = np.zeros((self.config.NUM_SEG_CLASSES,*seg_count[:2].astype(int)))
-        for instance in instances:
-            det_size = (instance['size'][:2]/ det_interval)
-            radius = max(tau,int(self.gaussian_radius(det_size)))
-            center = np.linalg.inv(ego_pose_rotation).dot(np.array(instance['translation'],dtype=np.float32)-ego_pose_translation)
-            center_loc = det_count[:2]-((center[:2] - det_lower_bound) / det_interval+0.5)[::-1]
-            category = instance['category']
-            rotation_matrix = np.linalg.inv(ego_pose_rotation).dot(to_rotation_matrix(instance['rotation']))
-            rotation = quaternion.from_rotation_matrix(rotation_matrix)
-            euler_angles = quaternion.as_euler_angles(rotation)
+        segment_gt = np.zeros((len(self.catogories),*seg_count[:2].astype(int)))
+        for ann_token in sample_record['anns']:
+            ann_record = self.nusc.get('sample_annotation', ann_token)
+            box = Box(ann_record['translation'],ann_record['size'],Quaternion(ann_record['rotation']),label=self.catogories.index(ann_record['category_name']))
+            box.translate(tran)
+            box.rotate(rot)
+
+            #for detection ground truth
+            radius = max(self.config.RADIUS_TAU,int(self.gaussian_radius(box.wlh[:2])))
+            print(box.center)
+            center_loc = ((box.center[:2] - det_start) / det_interval)[::-1]
+            print(center_loc)
+            orientation = np.arctan2(box.orientation.rotation_matrix[1,0],box.orientation.rotation_matrix[0,0])
             value = np.array((
                 (center_loc[0]-np.floor(center_loc[0]))*2-1,
                 (center_loc[1]-np.floor(center_loc[1]))*2-1,
-                euler_angles[0]*0.5/np.pi,
-                instance['size'][0],
-                instance['size'][1]))
-            heatmap_gt[category],regression_gt = self.draw_map(heatmap_gt[category],regression_gt,center_loc,radius,value)
+                orientation*0.5/np.pi,
+                box.wlh[0]/det_interval[0],
+                box.wlh[1]/det_interval[1]))
+            heatmap_gt[box.label],regression_gt = self.draw_detect_map(heatmap_gt[box.label],regression_gt,center_loc,radius,value)
+
+            #for segmentation ground truth
+            print(box.bottom_corners())
+            points = np.round((box.bottom_corners()[:2].T-seg_start)/seg_interval).astype(np.int32)[:,::-1]
+            print(points)
+            segment_gt[box.label] = self.draw_segment_map(segment_gt[box.label],points)
         return heatmap_gt,regression_gt,segment_gt
 
     def gaussian_radius(self, det_size, min_overlap=0.7):
@@ -125,7 +147,7 @@ class NuScenesDataset(VisionDataset):
         h[h < np.finfo(h.dtype).eps * h.max()] = 0
         return h
 
-    def draw_map(self,heatmap,regression,center,radius,value, k=1):
+    def draw_detect_map(self,heatmap,regression,center,radius,value, k=1):
         diameter = 2 * radius + 1
         gaussian = self.gaussian2D((diameter, diameter), sigma=diameter / 6)
         value = np.array(value, dtype=np.float32).reshape(-1, 1, 1)
@@ -151,8 +173,15 @@ class NuScenesDataset(VisionDataset):
                 1, masked_gaussian.shape[0], masked_gaussian.shape[1])
             masked_regression = (1-idx) * masked_regression + idx * masked_reg
         regression[:, y - top:y + bottom, x - left:x + right] = masked_regression
+        cv2.imshow("shit1",heatmap)
         return heatmap,regression
 
+    def draw_segment_map(self,segment_map,points):
+        cv2.fillPoly(segment_map, [points], 1.0)
+        cv2.imshow("shit2",segment_map)
+        cv2.waitKey()
+        return segment_map
+        
 if __name__ == "__main__":
     nusc_dataset = NuScenesDataset()
     nusc_dataloader = DataLoader(nusc_dataset,batch_size=2)

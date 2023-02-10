@@ -7,7 +7,7 @@ from grid_sampler import GridSampler
 from det_head import CenterPointHead
 from seg_head import VanillaSegmentHead
 
-class BEVerse(nn.Module):
+class BEVision(nn.Module):
     def __init__(self,grid_confs,num_det_classes=10,num_seg_classes=10,num_images=6,image_size=(640,640)):
         super().__init__()
         self.image_encoder = regnetx_002()
@@ -41,7 +41,7 @@ class BEVerse(nn.Module):
         seg_res = self.seg_head(grid_cells['seg'])
         return heatmap,regression,seg_res
 
-class BEVerseWithFixedParam(BEVerse):
+class BEVisionWithFixedParam(BEVision):
     def __init__(self,rots,trans,intrins,**kwargs):
         super().__init__(**kwargs)
         self.lss_transformer = LSSTransformWithFixedParam(rots,trans,intrins,image_size=self.image_size,numC_input=64,numC_trans=64,downsample=8,grid_conf=self.grid_conf,intrins_is_inverse=True)
@@ -89,14 +89,14 @@ if __name__ == '__main__':
         rots[:,:,i,i] = 1
         intrins[:,:,i,i] = 1
 
-    net1 = BEVerse(grid_confs).to(device)
+    net1 = BEVision(grid_confs).to(device)
     start = time.time()
     for i in range(100):
         res1 = net1(x,rots.to(device),trans.to(device),intrins.to(device))
     end = time.time()
     print("FPS:",100/(end-start))
     print([res.shape for res in res1])
-    net2 = BEVerseWithFixedParam(rots,trans,intrins,grid_confs=grid_confs).to(device)
+    net2 = BEVisionWithFixedParam(rots,trans,intrins,grid_confs=grid_confs).to(device)
     start = time.time()
     for i in range(100):
         res2 = net2(x)

@@ -1,25 +1,27 @@
 class Config:
     DATASET_VERSION='v1.0-mini'
-    DATASET_DATAROOT='D:/dataset/nuscenes'
+    DATASET_DATAROOT='D:/dataset/nuscenes/mini'
     DATASET_VERBOSE=True
     DATASET_MAP_RESOLUTION=0.1
+    DATASET_SPLIT = 'train'
+    RADIUS_TAU = 2
     '''x:forward, y:left, z:up'''
     GRID_CONFIG = {
     #for 3D grid:x forward,y left,z up
     'base': {
-        'xbound': [-50.0, 50.0, 0.5],
-        'ybound': [-50.0, 50.0, 0.5],
-        'zbound': [-10.0, 10.0, 20.0],
-        'dbound': [1.0, 60.0, 1.0],
+        'xbound': [-50.0, 50.0, 200],
+        'ybound': [-50.0, 50.0, 200],
+        'zbound': [-10.0, 10.0, 1],
+        'dbound': [1.0, 60.0, 59],
     },
     #for 2D gird:x forward,y left
     'det': {
-        'xbound': [-40.0, 40.0, 0.8],
-        'ybound': [-40.0, 40.0, 0.8],
+        'xbound': [-40.0, 40.0, 200],
+        'ybound': [-40.0, 40.0, 200],
     },
     'seg': {
-        'xbound': [-40.0, 40.0, 0.25],
-        'ybound': [-20.0, 20.0, 0.25],
+        'xbound': [-40.0, 40.0, 200],
+        'ybound': [-40.0, 40.0, 200],
     }
     }
 
@@ -28,7 +30,7 @@ class Config:
 
     INPUT_IMAGE_SIZE = (640,640) #height,width
 
-    DEVICE = "cuda:0"
+    DEVICE = "cpu"
     EPOCH = 10
     
     BATCH_SIZE = 1
@@ -38,7 +40,7 @@ class Config:
     LR_SCHE_GAMMA = 0.1
 
     NUM_DET_CLASSES = 23
-    NUM_SEG_CLASSES = 2
+    NUM_SEG_CLASSES = 23
     MODEL_SAVE_PATH = "./model.pt"
     DET_THRESHOLD = 0.5
     RANDOM_SEED = 42
