@@ -11,8 +11,8 @@ class GridSampler(nn.Module):
         self.mesh_y = generate_grid(target_grid_conf['ybound'])
 
         #convert to normalized coords
-        self.norm_mesh_x = (self.mesh_x-input_grid_conf['xbound'][0]) / (input_grid_conf['xbound'][1]-input_grid_conf['xbound'][0])*2-1
-        self.norm_mesh_y = (self.mesh_y-input_grid_conf['ybound'][0]) / (input_grid_conf['ybound'][1]-input_grid_conf['ybound'][0])*2-1
+        self.norm_mesh_x = torch.tensor((self.mesh_x-input_grid_conf['xbound'][0]) / (input_grid_conf['xbound'][1]-input_grid_conf['xbound'][0])*2-1)
+        self.norm_mesh_y = torch.tensor((self.mesh_y-input_grid_conf['ybound'][0]) / (input_grid_conf['ybound'][1]-input_grid_conf['ybound'][0])*2-1)
         
         #remember xy coordination of grid_conf(where x is forward,y is left) is different from torch.grid_sample(where x is right,y is backward)
         self.mesh_grid = torch.stack(torch.meshgrid(-self.norm_mesh_x, -self.norm_mesh_y, indexing='ij'), dim=2)

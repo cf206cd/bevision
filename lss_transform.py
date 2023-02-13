@@ -11,9 +11,9 @@ class LSSTransform(nn.Module):
         start,interval,count = generate_step([self.grid_conf['xbound'],
                                               self.grid_conf['ybound'],
                                               self.grid_conf['zbound']])
-        self.start = nn.Parameter(start, requires_grad=False)
-        self.count = nn.Parameter(count, requires_grad=False)
-        self.interval = nn.Parameter(interval, requires_grad=False)
+        self.start = nn.Parameter(torch.tensor(start), requires_grad=False)
+        self.count = nn.Parameter(torch.tensor(count), requires_grad=False)
+        self.interval = nn.Parameter(torch.tensor(interval), requires_grad=False)
         
         self.image_size = image_size
         self.downsample = downsample
@@ -39,15 +39,14 @@ class LSSTransform(nn.Module):
         ogfH, ogfW = self.image_size
         fH, fW = (ogfH+self.downsample-1) // self.downsample, (ogfW+self.downsample-1) // self.downsample
         ds = torch.arange(
-            *self.grid_conf['dbound'], dtype=torch.float).reshape(-1, 1, 1).expand(-1, fH, fW)
+            *self.grid_conf['dbound']).reshape(-1, 1, 1).expand(-1, fH, fW)
         D, _, _ = ds.shape
         xs = torch.linspace(
-            0, ogfW - 1, fW, dtype=torch.float).reshape(1, 1, fW).expand(D, fH, fW)
+            0, ogfW - 1, fW).reshape(1, 1, fW).expand(D, fH, fW)
         ys = torch.linspace(
-            0, ogfH - 1, fH, dtype=torch.float).reshape(1, fH, 1).expand(D, fH, fW)
-
+            0, ogfH - 1, fH).reshape(1, fH, 1).expand(D, fH, fW)
         # D x H x W x 3
-        frustum = torch.stack((xs, ys, ds), -1)
+        frustum = torch.stack((xs, ys, ds), -1).double()
         return frustum
 
     def get_geometry(self, rots, trans, intrins):
@@ -72,7 +71,7 @@ class LSSTransform(nn.Module):
 
         # 将像素坐标d[u,v,1]^T转换到车体坐标系下的[x,y,z]^T,d[u,v,1]^T=intrins*rots^(-1)*([x,y,z]^T-trans)，这里需要倒过来
         if self.intrins_is_inverse == False:
-            intrins_inverse = torch.inverse(intrins.float())
+            intrins_inverse = torch.inverse(intrins)
         else:
             intrins_inverse = intrins
         combine = rots.matmul(intrins_inverse)
