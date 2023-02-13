@@ -65,9 +65,6 @@ class NuScenesDataset(VisionDataset):
                 rotations.append(calibrated_sensor['rotation'])
                 camera_intrinsics.append(calibrated_sensor['camera_intrinsic'])
                 raws.append(Image.open(self.nusc.get_sample_data_path(sd_token)))
-                tmp=cv2.imread(self.nusc.get_sample_data_path(sd_token))
-                tmp=cv2.resize(tmp,(250,250))
-                cv2.imshow(self.nusc.get_sample_data_path(sd_token),tmp)
         images = np.stack([self.transform_image(raw) for raw in raws])
         rots = np.stack(Quaternion(rotation).rotation_matrix for rotation in rotations)
         trans = np.stack(translation for translation in translations)
@@ -97,10 +94,8 @@ class NuScenesDataset(VisionDataset):
             box.rotate(rot)
 
             #for detection ground truth
-            radius = max(self.config.RADIUS_TAU,int(self.gaussian_radius(box.wlh[:2])))
-            print(box.center)
-            center_loc = ((box.center[:2] - det_start) / det_interval)[::-1]
-            print(center_loc)
+            radius = max(self.config.RADIUS_TAU,int(self.gaussian_radius(box.wlh[:2]/det_interval)))
+            center_loc = det_count-1-((box.center[:2] - det_start) / det_interval)[::-1]
             orientation = np.arctan2(box.orientation.rotation_matrix[1,0],box.orientation.rotation_matrix[0,0])
             value = np.array((
                 (center_loc[0]-np.floor(center_loc[0]))*2-1,
@@ -111,9 +106,7 @@ class NuScenesDataset(VisionDataset):
             heatmap_gt[box.label],regression_gt = self.draw_detect_map(heatmap_gt[box.label],regression_gt,center_loc,radius,value)
 
             #for segmentation ground truth
-            print(box.bottom_corners())
-            points = np.round((box.bottom_corners()[:2].T-seg_start)/seg_interval).astype(np.int32)[:,::-1]
-            print(points)
+            points = seg_count-1-np.round((box.bottom_corners()[:2].T-seg_start)/seg_interval).astype(np.int32)[:,::-1]
             segment_gt[box.label] = self.draw_segment_map(segment_gt[box.label],points)
         return heatmap_gt,regression_gt,segment_gt
 
@@ -173,13 +166,10 @@ class NuScenesDataset(VisionDataset):
                 1, masked_gaussian.shape[0], masked_gaussian.shape[1])
             masked_regression = (1-idx) * masked_regression + idx * masked_reg
         regression[:, y - top:y + bottom, x - left:x + right] = masked_regression
-        cv2.imshow("shit1",heatmap)
         return heatmap,regression
 
     def draw_segment_map(self,segment_map,points):
         cv2.fillPoly(segment_map, [points], 1.0)
-        cv2.imshow("shit2",segment_map)
-        cv2.waitKey()
         return segment_map
         
 if __name__ == "__main__":
