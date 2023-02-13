@@ -66,9 +66,9 @@ class NuScenesDataset(VisionDataset):
                 camera_intrinsics.append(calibrated_sensor['camera_intrinsic'])
                 raws.append(Image.open(self.nusc.get_sample_data_path(sd_token)))
         images = np.stack([self.transform_image(raw) for raw in raws])
-        rots = np.stack(Quaternion(rotation).rotation_matrix for rotation in rotations)
-        trans = np.stack(translation for translation in translations)
-        intrinsics =  np.stack([self.transform_intrinsic(np.array(camera_intrinsic),widths[i],heights[i]) for i,camera_intrinsic in enumerate(camera_intrinsics)])
+        rots = np.stack(Quaternion(rotation).rotation_matrix for rotation in rotations).astype(np.float32)
+        trans = np.stack(translation for translation in translations).astype(np.float32)
+        intrinsics =  np.stack([self.transform_intrinsic(np.array(camera_intrinsic),widths[i],heights[i]) for i,camera_intrinsic in enumerate(camera_intrinsics)]).astype(np.float32)
         return images,rots,trans,intrinsics
 
     def transform_intrinsic(self,intrinsic,width,height):

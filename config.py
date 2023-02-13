@@ -5,7 +5,7 @@ class Config:
     DATASET_MAP_RESOLUTION=0.1
     DATASET_SPLIT = 'train'
     RADIUS_TAU = 2
-    '''x:forward, y:left, z:up'''
+    #for grid config:start, end, step
     GRID_CONFIG = {
     #for 3D grid:x forward,y left,z up
     'base': {
@@ -14,7 +14,7 @@ class Config:
         'zbound': [-10.0, 10.0, 1],
         'dbound': [1.0, 60.0, 59],
     },
-    #for 2D gird:x forward,y left
+    #for 2D gird:x down,y right
     'det': {
         'xbound': [-40.0, 40.0, 200],
         'ybound': [-40.0, 40.0, 200],

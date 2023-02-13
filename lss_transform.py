@@ -37,17 +37,14 @@ class LSSTransform(nn.Module):
     def create_frustum(self):
         # make grid in image plane
         ogfH, ogfW = self.image_size
-        fH, fW = (ogfH+self.downsample-1) // self.downsample, (ogfW+self.downsample-1) // self.downsample
-        ds = torch.arange(
-            *self.grid_conf['dbound']).reshape(-1, 1, 1).expand(-1, fH, fW)
+        fH, fW = ogfH // self.downsample, ogfW // self.downsample
+        ds = torch.linspace(*self.grid_conf['dbound']).reshape(-1, 1, 1).expand(-1, fH, fW)
         D, _, _ = ds.shape
-        xs = torch.linspace(
-            0, ogfW - 1, fW).reshape(1, 1, fW).expand(D, fH, fW)
-        ys = torch.linspace(
-            0, ogfH - 1, fH).reshape(1, fH, 1).expand(D, fH, fW)
+        xs = torch.linspace(0, ogfW - 1, fW).reshape(1, 1, fW).expand(D, fH, fW)
+        ys = torch.linspace(0, ogfH - 1, fH).reshape(1, fH, 1).expand(D, fH, fW)
         # D x H x W x 3
-        frustum = torch.stack((xs, ys, ds), -1).double()
-        return frustum
+        frustum = torch.stack((xs, ys, ds), -1)
+        return nn.Parameter(frustum, requires_grad=False)
 
     def get_geometry(self, rots, trans, intrins):
         """Determine the (x,y,z) locations (in the ego frame)
@@ -71,7 +68,7 @@ class LSSTransform(nn.Module):
 
         # 将像素坐标d[u,v,1]^T转换到车体坐标系下的[x,y,z]^T,d[u,v,1]^T=intrins*rots^(-1)*([x,y,z]^T-trans)，这里需要倒过来
         if self.intrins_is_inverse == False:
-            intrins_inverse = torch.inverse(intrins)
+            intrins_inverse = torch.inverse(intrins.float())
         else:
             intrins_inverse = intrins
         combine = rots.matmul(intrins_inverse)
@@ -225,24 +222,25 @@ def cumsum_trick(x, geom, ranks):
 
 if __name__ == "__main__":
     grid_conf = {
-        'xbound': [-10.0, 50.0, 0.125],
-        'ybound': [-15.0, 15.0, 0.125],
-        'zbound': [-10.0, 10.0, 20.0],
-        'dbound': [1.0, 60.0, 1.0],}
-    x = torch.randn(2,6,64,80,80)
+        'xbound': [-50.0, 50.0, 200],
+        'ybound': [-50.0, 50.0, 160],
+        'zbound': [-10.0, 10.0, 1],
+        'dbound': [1.0, 60.0, 59],}
+    x = torch.randn(2,6,64,120,80)
     rots = torch.randn(2,6,3,3)
     trans = torch.randn(2,6,3)
     intrins = torch.zeros(2,6,3,3)
+    print(x.shape)
     for i in range(3):
         rots[:,:,i,i] = 1
         intrins[:,:,i,i] = 1
-    net1 = LSSTransform(grid_conf=grid_conf,image_size=(640,640),numC_input=64,numC_trans=64,downsample=8)
+    net1 = LSSTransform(grid_conf=grid_conf,image_size=(960,640),numC_input=64,numC_trans=64,downsample=8)
     output1 = net1(x,rots,trans,intrins)
     print(output1.shape)
     jit_model1 = torch.jit.script(net1,[x,rots,trans,intrins])
     print(jit_model1)
 
-    net2 = LSSTransformWithFixedParam(rots,trans,intrins,grid_conf=grid_conf,image_size=(640,640),numC_input=64,numC_trans=64,downsample=8)
+    net2 = LSSTransformWithFixedParam(rots,trans,intrins,grid_conf=grid_conf,image_size=(960,640),numC_input=64,numC_trans=64,downsample=8)
     output2 = net2(x)
     print(output2.shape)
     jit_model2 = torch.jit.script(net2,x)
