@@ -94,6 +94,7 @@ class RegNet(nn.Module):
         self.layer4 = self._make_layer(block, widths[3], layers[3], stride=2,
                                        dilate=replace_stride_with_dilation[3])
 
+        self.widths = widths
         self.out_indices = out_indices
 
         for m in self.modules():
