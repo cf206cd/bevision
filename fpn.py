@@ -44,17 +44,17 @@ class FPN(nn.Module):
         return outs
 
 if __name__ == "__main__":
-    x1 = [torch.zeros(6,56,80,80),
-            torch.zeros(6,152,40,40),
-            torch.zeros(6,368,20,20)]
-    net1 = FPN(in_channels=[56,152,368],out_channels=64)
+    x1 = [torch.randn(6,240,64,36),
+            torch.randn(6,720,32,18),
+            torch.randn(6,1920,16,9)]
+    net1 = FPN(in_channels=[240, 720, 1920],out_channels=64)
     output1 = net1(x1)
     print([i.shape for i in output1])
     jit_model1 = torch.jit.script(net1,x1)
     print(jit_model1)
 
-    x2 = [torch.zeros(4,152,64,64),
-            torch.zeros(4,368,32,32)]
+    x2 = [torch.randn(4,152,100,100),
+            torch.randn(4,368,50,50)]
     net2 = FPN(in_channels=[152,368],out_channels=64)
     output2 = net2(x2)
     print([i.shape for i in output2])

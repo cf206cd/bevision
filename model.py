@@ -67,7 +67,7 @@ if __name__ == '__main__':
         'xbound': [-50.0, 50.0, 200],
         'ybound': [-50.0, 50.0, 200],
         'zbound': [-10.0, 10.0, 1],
-        'dbound': [1.0, 60.0, 59],
+        'dbound': [1.0, 50.0, 49],
     },
     #for 2D gird:x down,y right
     'det': {
@@ -81,7 +81,7 @@ if __name__ == '__main__':
     }
     import time
     device = torch.device("cpu")
-    x = torch.zeros(2,6,3,640,640).to(device)
+    x = torch.zeros(2,6,3,228,512).to(device)
     rots = torch.zeros(2,6,3,3)
     trans =torch.zeros(2,6,3)
     intrins = torch.zeros(2,6,3,3)

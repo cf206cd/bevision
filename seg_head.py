@@ -10,7 +10,7 @@ class VanillaSegmentHead(nn.Module):
         return self.head(x)
 
 if __name__ == "__main__":
-    x = torch.zeros(4,64,200,400)
+    x = torch.randn(4,64,200,200)
     net = VanillaSegmentHead(64,10)
     res = net(x)
     print(res.shape)

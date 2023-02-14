@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils import generate_grid,generate_step
+from utils import generate_grid
 
 class GridSampler(nn.Module):
     def __init__(self,input_grid_conf,target_grid_conf):
@@ -28,7 +28,7 @@ if __name__ == "__main__":
         'xbound': [-50.0, 50.0, 200],
         'ybound': [-50.0, 50.0, 200],
         'zbound': [-10.0, 10.0, 1],
-        'dbound': [1.0, 60.0, 59],
+        'dbound': [1.0, 50.0, 49],
     }
     task_grids = {
     'det': {
@@ -41,7 +41,7 @@ if __name__ == "__main__":
     }
     }
 
-    x = torch.zeros(2,64,120,60)
+    x = torch.randn(2,64,200,200)
     for name,conf in task_grids.items():
         net = GridSampler(base_grid,conf)
         res = net(x)
