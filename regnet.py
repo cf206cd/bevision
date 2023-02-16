@@ -94,6 +94,7 @@ class RegNet(nn.Module):
         self.layer4 = self._make_layer(block, widths[3], layers[3], stride=2,
                                        dilate=replace_stride_with_dilation[3])
 
+        self.widths = widths
         self.out_indices = out_indices
 
         for m in self.modules():
@@ -201,13 +202,13 @@ def regnetx_320(**kwargs):
     return RegNet(Bottleneck, [2, 7, 13, 1], [336, 672, 1344, 2520], group_width=168, **kwargs)
 
 if __name__ == "__main__":
-    x1 = torch.zeros(6,3,640,640)
-    net1 = regnetx_002()
+    x1 = torch.zeros(6,3,228,512)
+    net1 = regnetx_080()
     output1 = net1(x1)
     print([i.shape for i in output1])
     jit_model1 = torch.jit.script(net1,x1)
     print(jit_model1)
-    x2 = torch.zeros(4,64,128,128)
+    x2 = torch.zeros(4,64,200,200)
     net2 = regnetx_002(input_channel=64,out_indices=[2,3],replace_stride_with_dilation=[True,True,True,False])
     output2 = net2(x2)
     print([i.shape for i in output2])

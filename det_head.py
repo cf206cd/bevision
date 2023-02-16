@@ -22,7 +22,7 @@ class CenterPointHead(nn.Module):
         return heatmap,regression
 
 if __name__ == "__main__":
-    x = torch.zeros(4,64,128,128)
+    x = torch.randn(4,64,200,200)
     net = CenterPointHead(64,10)
     res = net(x)
     print(res[0].shape,res[1].shape)

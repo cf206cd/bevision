@@ -12,7 +12,7 @@ class Config:
         'xbound': [-50.0, 50.0, 200],
         'ybound': [-50.0, 50.0, 200],
         'zbound': [-10.0, 10.0, 1],
-        'dbound': [1.0, 60.0, 59],
+        'dbound': [1.0, 50.0, 49],
     },
     #for 2D gird:x down,y right
     'det': {
@@ -28,7 +28,7 @@ class Config:
     MEAN = [0.485, 0.456, 0.406]
     STD = [0.229, 0.224, 0.225]
 
-    INPUT_IMAGE_SIZE = (640,640) #height,width
+    INPUT_IMAGE_SIZE = (288,512) #height,width
 
     DEVICE = "cpu"
     EPOCH = 10

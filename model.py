@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from regnet import regnetx_002
+from regnet import regnetx_002,regnetx_080
 from fpn import FPN
 from lss_transform import LSSTransform,LSSTransformWithFixedParam
 from grid_sampler import GridSampler
@@ -10,8 +10,8 @@ from seg_head import VanillaSegmentHead
 class BEVision(nn.Module):
     def __init__(self,grid_confs,num_det_classes=10,num_seg_classes=10,num_images=6,image_size=(640,640)):
         super().__init__()
-        self.image_encoder = regnetx_002()
-        self.image_fpn = FPN(in_channels=[56,152,368],out_channels=64)
+        self.image_encoder = regnetx_080()
+        self.image_fpn = FPN(in_channels=[self.image_encoder.widths[i] for i in self.image_encoder.out_indices],out_channels=64)
         self.grid_conf = grid_confs['base']
         self.image_size = image_size
         self.lss_transformer = LSSTransform(grid_conf=self.grid_conf,image_size=self.image_size,numC_input=64,numC_trans=64,downsample=8)
@@ -64,24 +64,24 @@ class BEVisionWithFixedParam(BEVision):
 if __name__ == '__main__':
     grid_confs = {
     'base': {
-        'xbound': [-10.0, 50.0, 0.5],
-        'ybound': [-15.0, 15.0, 0.5],
-        'zbound': [-10.0, 10.0, 20.0],
-        'dbound': [1.0, 60.0, 1.0],
+        'xbound': [-50.0, 50.0, 200],
+        'ybound': [-50.0, 50.0, 200],
+        'zbound': [-10.0, 10.0, 1],
+        'dbound': [1.0, 50.0, 49],
     },
-    #for 2D gird:x forward,y left
+    #for 2D gird:x down,y right
     'det': {
-        'xbound': [-10.0, 50.0, 0.5],
-        'ybound': [-10.0, 10.0, 0.5],
+        'xbound': [-40.0, 40.0, 200],
+        'ybound': [-40.0, 40.0, 200],
     },
     'seg': {
-        'xbound': [-10.0, 50.0, 0.25],
-        'ybound': [-15.0, 15.0, 0.25],
+        'xbound': [-40.0, 40.0, 200],
+        'ybound': [-40.0, 40.0, 200],
     }
     }
     import time
     device = torch.device("cpu")
-    x = torch.zeros(2,6,3,640,640).to(device)
+    x = torch.zeros(2,6,3,228,512).to(device)
     rots = torch.zeros(2,6,3,3)
     trans =torch.zeros(2,6,3)
     intrins = torch.zeros(2,6,3,3)

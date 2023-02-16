@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from utils import generate_step
+from utils import generate_step,generate_grid
 class LSSTransform(nn.Module):
     def __init__(self, grid_conf=None, image_size=None, #image_size: origin image count, H x W
                 numC_input=512, numC_trans=512, downsample=16, 
@@ -37,8 +37,8 @@ class LSSTransform(nn.Module):
     def create_frustum(self):
         # make grid in image plane
         ogfH, ogfW = self.image_size
-        fH, fW = ogfH // self.downsample, ogfW // self.downsample
-        ds = torch.linspace(*self.grid_conf['dbound']).reshape(-1, 1, 1).expand(-1, fH, fW)
+        fH, fW = (ogfH+self.downsample-1) // self.downsample, (ogfW+self.downsample-1) // self.downsample
+        ds = torch.tensor(generate_grid(self.grid_conf['dbound'])).reshape(-1, 1, 1).expand(-1, fH, fW)
         D, _, _ = ds.shape
         xs = torch.linspace(0, ogfW - 1, fW).reshape(1, 1, fW).expand(D, fH, fW)
         ys = torch.linspace(0, ogfH - 1, fH).reshape(1, fH, 1).expand(D, fH, fW)
@@ -47,19 +47,17 @@ class LSSTransform(nn.Module):
         return nn.Parameter(frustum, requires_grad=False)
 
     def get_geometry(self, rots, trans, intrins):
-        """Determine the (x,y,z) locations (in the ego frame)
-        of the points in the point cloud.
+        """
+        Determine the (x,y,z) locations (in the ego frame) of the points in the point cloud.
         Returns B x N x D x H/downsample x W/downsample x 3
         """
 
         N = trans.shape[1]
 
-        points = self.frustum.unsqueeze(0).unsqueeze(0).unsqueeze(-1)
+        points = self.frustum.unsqueeze(0).unsqueeze(0).unsqueeze(-1).clone()
 
-        #将像素坐标(u,v,1)根据深度d变成齐次坐标(du,dv,d)
-        points = torch.cat((points[:, :, :, :, :, :2] * points[:, :, :, :, :, 2:3],
-                            points[:, :, :, :, :, 2:3]
-                            ), 5)
+        #将(u,v,d)根据深度d变成齐次坐标(du,dv,d), 即像素坐标(u,v,1)
+        points[:, :, :, :, :, :2] = points[:, :, :, :, :, :2]*points[:, :, :, :, :, 2:3]
 
         # flatten (batch & sequence)
         rots = rots.flatten(0, 1).to(points.device)
@@ -148,7 +146,6 @@ class LSSTransform(nn.Module):
         x, geom = cumsum_trick(x, geom, ranks)
 
         # griddify as (B x Z x X x Y x C) not (B x C x Z x X x Y) for onnx export, see https://pytorch.org/docs/stable/onnx.html#unsupported-tensor-indexing-patterns
-        # 将x按照栅格坐标放到final中
         count = self.count.long()
         bev_feat = torch.zeros(B, count[2], count[0], count[1], C, device=x.device)
 
@@ -158,7 +155,6 @@ class LSSTransform(nn.Module):
         # permute back to (B x C x Z x X x Y)
         bev_feat = bev_feat.permute(0,4,1,2,3)
         # collapse Z
-        # 消除掉z维
         bev_feat = bev_feat.reshape(bev_feat.shape[0],-1,bev_feat.shape[3],bev_feat.shape[4])
         return bev_feat
 
@@ -223,10 +219,10 @@ def cumsum_trick(x, geom, ranks):
 if __name__ == "__main__":
     grid_conf = {
         'xbound': [-50.0, 50.0, 200],
-        'ybound': [-50.0, 50.0, 160],
+        'ybound': [-50.0, 50.0, 200],
         'zbound': [-10.0, 10.0, 1],
-        'dbound': [1.0, 60.0, 59],}
-    x = torch.randn(2,6,64,120,80)
+        'dbound': [1.0, 50.0, 49],}
+    x = torch.randn(2,6,64,36,64)
     rots = torch.randn(2,6,3,3)
     trans = torch.randn(2,6,3)
     intrins = torch.zeros(2,6,3,3)
@@ -234,13 +230,13 @@ if __name__ == "__main__":
     for i in range(3):
         rots[:,:,i,i] = 1
         intrins[:,:,i,i] = 1
-    net1 = LSSTransform(grid_conf=grid_conf,image_size=(960,640),numC_input=64,numC_trans=64,downsample=8)
+    net1 = LSSTransform(grid_conf=grid_conf,image_size=(288,512),numC_input=64,numC_trans=64,downsample=8)
     output1 = net1(x,rots,trans,intrins)
     print(output1.shape)
     jit_model1 = torch.jit.script(net1,[x,rots,trans,intrins])
     print(jit_model1)
 
-    net2 = LSSTransformWithFixedParam(rots,trans,intrins,grid_conf=grid_conf,image_size=(960,640),numC_input=64,numC_trans=64,downsample=8)
+    net2 = LSSTransformWithFixedParam(rots,trans,intrins,grid_conf=grid_conf,image_size=(288,512),numC_input=64,numC_trans=64,downsample=8)
     output2 = net2(x)
     print(output2.shape)
     jit_model2 = torch.jit.script(net2,x)
