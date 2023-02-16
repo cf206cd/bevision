@@ -38,7 +38,7 @@ class LSSTransform(nn.Module):
         # make grid in image plane
         ogfH, ogfW = self.image_size
         fH, fW = (ogfH+self.downsample-1) // self.downsample, (ogfW+self.downsample-1) // self.downsample
-        ds = torch.tensor(generate_grid(self.grid_conf['dbound'])).reshape(-1, 1, 1).expand(-1, fH, fW)
+        ds = torch.linspace(*self.grid_conf['dbound']).reshape(-1, 1, 1).expand(-1, fH, fW)
         D, _, _ = ds.shape
         xs = torch.linspace(0, ogfW - 1, fW).reshape(1, 1, fW).expand(D, fH, fW)
         ys = torch.linspace(0, ogfH - 1, fH).reshape(1, fH, 1).expand(D, fH, fW)
