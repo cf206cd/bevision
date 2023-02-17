@@ -2,3 +2,5 @@ __pycache__/
 *.pt
 .gitignore
 weights/
+imgs/
+image/runs/
