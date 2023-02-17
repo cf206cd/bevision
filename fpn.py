@@ -43,6 +43,8 @@ class FPN(nn.Module):
             for i,fpn_conv in enumerate(self.fpn_convs)]        
         return outs
 
+
+
 if __name__ == "__main__":
     x1 = [torch.randn(6,240,64,36),
             torch.randn(6,720,32,18),

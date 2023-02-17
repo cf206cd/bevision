@@ -4,25 +4,13 @@ class Config:
     DATASET_VERBOSE=True
     DATASET_MAP_RESOLUTION=0.1
     DATASET_SPLIT = 'train'
-    RADIUS_TAU = 2
     #for grid config:start, end, step
     GRID_CONFIG = {
     #for 3D grid:x forward,y left,z up
-    'base': {
-        'xbound': [-50.0, 50.0, 200],
-        'ybound': [-50.0, 50.0, 200],
-        'zbound': [-10.0, 10.0, 1],
-        'dbound': [1.0, 50.0, 49],
-    },
-    #for 2D gird:x down,y right
-    'det': {
-        'xbound': [-40.0, 40.0, 200],
-        'ybound': [-40.0, 40.0, 200],
-    },
-    'seg': {
-        'xbound': [-40.0, 40.0, 200],
-        'ybound': [-40.0, 40.0, 200],
-    }
+    'xbound': [-50.0, 50.0, 200],
+    'ybound': [-50.0, 50.0, 200],
+    'zbound': [-10.0, 10.0, 1],
+    'dbound': [1.0, 50.0, 49],
     }
 
     MEAN = [0.485, 0.456, 0.406]
@@ -30,17 +18,17 @@ class Config:
 
     INPUT_IMAGE_SIZE = (288,512) #height,width
 
-    DEVICE = "cpu"
-    EPOCH = 10
+    DEVICE = "cuda:0"
+    EPOCH = 20
     
     BATCH_SIZE = 1
     LEARNING_RATE = 1e-3
-    MOMENTUM = 0.99
-    LR_SCHE_STEP_SIZE = 150
-    LR_SCHE_GAMMA = 0.1
+    WEIGHT_DECAY = 1e-7
+    LR_SCHE_STEP_SIZE = 1500
+    LR_SCHE_GAMMA = 1
+    MAX_GRAD_NORM = 5
 
-    NUM_DET_CLASSES = 23
-    NUM_SEG_CLASSES = 23
-    MODEL_SAVE_PATH = "./model.pt"
-    DET_THRESHOLD = 0.5
+    NUM_CAMERAS = 6
+    NUM_SEG_CLASSES = 1
+    LOG_DIR = "./runs"
     RANDOM_SEED = 42

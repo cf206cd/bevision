@@ -5,12 +5,13 @@ from config import Config
 import numpy as np
 from PIL import Image
 from utils import generate_grid
+import os
 
 class Predictor:
     def __init__(self,config):
         self.config = config
         self.model = BEVision(config.GRID_CONFIG,num_det_classes=config.NUM_DET_CLASSES,num_seg_classes=config.NUM_SEG_CLASSES,image_size=config.INPUT_IMAGE_SIZE).to(torch.device(config.DEVICE),)
-        self.model.load_state_dict(torch.load(config.MODEL_SAVE_PATH,map_location=config.DEVICE))
+        self.model.load_state_dict(torch.load(os.path.join(self.config.LOG_DIR,"model_last.pt"),map_location=config.DEVICE))
         self.model.to(self.config.DEVICE).eval()
         xc = torch.tensor(generate_grid(config.GRID_CONFIG['det']['xbound']),device=self.config.DEVICE)
         yc = torch.tensor(generate_grid(config.GRID_CONFIG['det']['ybound']),device=self.config.DEVICE)
@@ -21,25 +22,8 @@ class Predictor:
         rots = torch.tensor(rots).to(self.config.DEVICE)
         trans = torch.tensor(trans).to(self.config.DEVICE)
         intrins = torch.tensor(intrins).to(self.config.DEVICE)
-        heatmap,regression,seg_res = self.model(x,rots,trans,intrins)
-        det_res = self.post_process(heatmap,regression,self.config.DET_THRESHOLD)
-        return det_res,seg_res
-
-    def post_process(self,heatmap,regression,threshold):
-        heatmap.sigmoid_()
-        heatmap = self.nms(heatmap)
-        heatmap_values,heatmap_indices = torch.max(heatmap,dim=1)
-        xyc = self.xyc.repeat(heatmap.shape[0],1,1,1)
-        res = torch.concat([heatmap_indices.unsqueeze(-1),xyc,regression.permute(0,2,3,1)],dim=-1)
-        return res[heatmap_values>threshold]
-
-    def nms(self,heatmap,kernel_size=3):
-        pad = (kernel_size - 1) // 2
-        hmax = nn.functional.max_pool2d(
-            heatmap, (kernel_size, kernel_size), stride=1, padding=pad)
-        keep = (hmax == heatmap).float()
-        return heatmap * keep
-        
+        seg_res = self.model(x,rots,trans,intrins)
+        return seg_res
 
 if __name__ == '__main__':
     config = Config

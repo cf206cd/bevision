@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from utils import generate_step,generate_grid
-class LSSTransform(nn.Module):
+class LiftSplat(nn.Module):
     def __init__(self, grid_conf=None, image_size=None, #image_size: origin image count, H x W
                 numC_input=512, numC_trans=512, downsample=16, 
                 intrins_is_inverse=False):
@@ -170,7 +170,7 @@ class LSSTransform(nn.Module):
 
         return bev_feat
 
-class LSSTransformWithFixedParam(LSSTransform):
+class LiftSplatWithFixedParam(LiftSplat):
     def __init__(self, rots,trans,intrins, **kwargs):
         super().__init__(**kwargs)
         geom = self.get_geometry(rots, trans, intrins)
@@ -230,13 +230,13 @@ if __name__ == "__main__":
     for i in range(3):
         rots[:,:,i,i] = 1
         intrins[:,:,i,i] = 1
-    net1 = LSSTransform(grid_conf=grid_conf,image_size=(288,512),numC_input=64,numC_trans=64,downsample=8)
+    net1 = LiftSplat(grid_conf=grid_conf,image_size=(288,512),numC_input=64,numC_trans=64,downsample=8)
     output1 = net1(x,rots,trans,intrins)
     print(output1.shape)
     jit_model1 = torch.jit.script(net1,[x,rots,trans,intrins])
     print(jit_model1)
 
-    net2 = LSSTransformWithFixedParam(rots,trans,intrins,grid_conf=grid_conf,image_size=(288,512),numC_input=64,numC_trans=64,downsample=8)
+    net2 = LiftSplatWithFixedParam(rots,trans,intrins,grid_conf=grid_conf,image_size=(288,512),numC_input=64,numC_trans=64,downsample=8)
     output2 = net2(x)
     print(output2.shape)
     jit_model2 = torch.jit.script(net2,x)
