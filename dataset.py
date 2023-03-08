@@ -71,7 +71,6 @@ class NuScenesDataset(VisionDataset):
         seg_start,seg_interval,seg_count = generate_step([self.config.GRID_CONFIG['xbound'],
                                                         self.config.GRID_CONFIG['ybound']])
         segment_gt = np.zeros((len(self.catogories),*seg_count[:2].astype(int)))
-        segment_gt = np.zeros((1,*seg_count[:2].astype(int)))
         for ann_token in sample_record['anns']:
             ann_record = self.nusc.get('sample_annotation', ann_token)
             #box = Box(ann_record['translation'],ann_record['size'],Quaternion(ann_record['rotation']),label=self.catogories.index(ann_record['category_name']))
