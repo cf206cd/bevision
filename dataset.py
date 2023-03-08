@@ -74,8 +74,8 @@ class NuScenesDataset(VisionDataset):
         #segment_gt = np.zeros((1,*seg_count[:2].astype(int)))
         for ann_token in sample_record['anns']:
             ann_record = self.nusc.get('sample_annotation', ann_token)
-            #box = Box(ann_record['translation'],ann_record['size'],Quaternion(ann_record['rotation']),label=self.catogories.index(ann_record['category_name']))
-            box = Box(ann_record['translation'],ann_record['size'],Quaternion(ann_record['rotation']),label=0)
+            box = Box(ann_record['translation'],ann_record['size'],Quaternion(ann_record['rotation']),label=self.catogories.index(ann_record['category_name']))
+            #box = Box(ann_record['translation'],ann_record['size'],Quaternion(ann_record['rotation']),label=0)
             box.translate(tran)
             box.rotate(rot)
             #for segmentation ground truth
