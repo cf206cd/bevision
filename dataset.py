@@ -29,16 +29,6 @@ class NuScenesDataset(VisionDataset):
 
     def __getitem__(self, index):
         sample_record = self.samples[index]
-        
-        instances = []
-        for ann_token in sample_record['anns']:
-            ann_record = self.nusc.get('sample_annotation', ann_token)
-            instance = {}
-            instance['translation'] = ann_record['translation']#x:forward,y:left,z:up
-            instance['size'] = ann_record['size']#width, length, height
-            instance['rotation'] = ann_record['rotation']
-            instance['category'] = self.catogories.index(ann_record['category_name'])
-            instances.append(instance)
         images,rots,trans,intrinsics = self.generate_inputs(sample_record)
         segment_gt = self.generate_targets(sample_record)
         return images,rots,trans,intrinsics,segment_gt
